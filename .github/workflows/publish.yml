@@ -1,0 +1,493 @@
+name: Publish and Create Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libicu-dev
+
+      # Configure and build
+      - name: Configure CMake
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --config Release --parallel
+
+      # Run tests
+      - name: Run tests
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+
+      # Build prebuilt binaries for Linux
+      - name: Build prebuilt binaries for Linux
+        run: |
+          mkdir -p build-prebuilt
+          cd build-prebuilt
+          cmake .. -DSTATIC=ON -DBUILD_TESTING=OFF
+          cmake --build . --target suzume_feedmill_cli --config Release --parallel
+
+      # Create GitHub Release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          body: |
+            # Suzume Feedmill ${{ github.ref_name }}
+
+            Automated release for Suzume Feedmill ${{ github.ref_name }}.
+
+            ## Features
+
+            - High-performance text normalization
+            - PMI calculation
+            - Word extraction
+            - Cross-platform support (Linux, macOS, Windows)
+            - WebAssembly support for browsers and Node.js
+
+            ## Installation
+
+            Download the prebuilt binary for your platform or build from source.
+
+            ### WebAssembly
+
+            The WebAssembly module is available in the release assets. Download `suzume-feedmill-wasm.zip` and include it in your web or Node.js project.
+
+          files: |
+            build-prebuilt/suzume-feedmill
+            build-prebuilt/bin/suzume-feedmill
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install cmake icu4c
+          echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$(brew --prefix icu4c)/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I$(brew --prefix icu4c)/include" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix icu4c)" >> $GITHUB_ENV
+
+      # Build prebuilt binaries for macOS
+      - name: Build prebuilt binaries for macOS
+        run: |
+          mkdir -p build-prebuilt
+          cd build-prebuilt
+          cmake .. -DSTATIC=ON -DBUILD_TESTING=OFF
+          cmake --build . --target suzume_feedmill_cli --config Release --parallel
+
+      # Upload artifacts
+      - name: Upload macOS binary to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            build-prebuilt/bin/suzume-feedmill
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          choco install cmake -y
+          vcpkg install icu:x64-windows
+          echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
+          echo "VCPKG_INSTALLATION_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+
+      # Build prebuilt binaries for Windows
+      - name: Build prebuilt binaries for Windows
+        run: |
+          mkdir -p build-prebuilt
+          cd build-prebuilt
+          cmake .. -DSTATIC=ON -DBUILD_TESTING=OFF -DCMAKE_TOOLCHAIN_FILE="$env:CMAKE_TOOLCHAIN_FILE"
+          cmake --build . --target suzume_feedmill_cli --config Release --parallel
+
+      # Upload artifacts
+      - name: Upload Windows binary to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            build-prebuilt/Release/suzume-feedmill.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libicu-dev nodejs npm zip
+
+      # Setup Emscripten
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v12
+        with:
+          version: latest
+          actions-cache-folder: "emsdk-cache"
+
+      # Verify Emscripten installation
+      - name: Verify Emscripten
+        run: |
+          emcc --version
+
+      # Build WebAssembly module
+      - name: Build WebAssembly module
+        run: |
+          mkdir -p build-wasm
+          cd build-wasm
+          emcmake cmake .. -DBUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
+          emmake make -j$(nproc)
+
+      # Create wasm directory and copy files
+      - name: Prepare WebAssembly files
+        run: |
+          mkdir -p wasm
+          cp build-wasm/suzume-feedmill.js wasm/
+          cp build-wasm/suzume-feedmill.wasm wasm/
+
+          # Create a simple HTML example
+          cat > wasm/example.html << 'EOL'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>Suzume Feedmill WASM Demo</title>
+            <style>
+              body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+              textarea { width: 100%; height: 150px; margin-bottom: 10px; }
+              pre { background: #f5f5f5; padding: 10px; border-radius: 5px; overflow: auto; }
+              button { padding: 8px 16px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; }
+              button:hover { background: #45a049; }
+              .result { margin-top: 20px; }
+            </style>
+          </head>
+          <body>
+            <h1>Suzume Feedmill WASM Demo</h1>
+            <p>Enter Japanese text below and click the buttons to process it.</p>
+
+            <textarea id="input">今日は良い天気ですね。明日も晴れるといいな。
+          今日は　良い天気ですね。明日も晴れるといいな。
+          今日は良い天気ですね！明日も晴れるといいな～
+          人工知能の研究が進んでいます。機械学習の応用が広がっています。
+          自然言語処理技術の発展により、翻訳精度が向上しています。</textarea>
+
+            <div>
+              <button id="normalize">1. Normalize</button>
+              <button id="pmi" disabled>2. Calculate PMI</button>
+              <button id="extract" disabled>3. Extract Words</button>
+            </div>
+
+            <div class="result" id="result"></div>
+
+            <script>
+              // Store results between steps
+              let normalizedText = '';
+              let pmiResults = '';
+
+              // Load the WASM module
+              var Module = {
+                onRuntimeInitialized: function() {
+                  document.getElementById('normalize').addEventListener('click', function() {
+                    const input = document.getElementById('input').value;
+
+                    // Call the normalize function
+                    const result = Module.normalize(input, {
+                      form: 'NFKC',
+                      threads: 2
+                    });
+
+                    if (result.error) {
+                      document.getElementById('result').innerHTML = `<h3>Error:</h3><pre>${result.error}</pre>`;
+                      return;
+                    }
+
+                    normalizedText = result.text;
+
+                    // Display the result
+                    document.getElementById('result').innerHTML =
+                      '<h3>Normalized Text:</h3>' +
+                      '<pre>' + normalizedText + '</pre>' +
+                      '<h3>Stats:</h3>' +
+                      '<p>Rows: ' + result.rows + '</p>' +
+                      '<p>Unique rows: ' + result.uniques + '</p>' +
+                      '<p>Duplicates removed: ' + result.duplicates + '</p>';
+
+                    // Enable the next button
+                    document.getElementById('pmi').disabled = false;
+                  });
+
+                  document.getElementById('pmi').addEventListener('click', function() {
+                    // Call the PMI calculation function
+                    const result = Module.calculatePmi(normalizedText, {
+                      n: 2,
+                      topK: 20,
+                      minFreq: 1
+                    });
+
+                    if (result.error) {
+                      document.getElementById('result').innerHTML += `<h3>Error:</h3><pre>${result.error}</pre>`;
+                      return;
+                    }
+
+                    // Format PMI results for display and next step
+                    pmiResults = result.results.map(r => `${r.ngram}\t${r.score}\t${r.frequency}`).join('\n');
+
+                    // Display the result
+                    let pmiHtml = '<h3>PMI Results:</h3><pre>';
+                    result.results.forEach(item => {
+                      pmiHtml += `${item.ngram}\t${item.score.toFixed(2)}\t${item.frequency}\n`;
+                    });
+                    pmiHtml += '</pre>';
+
+                    document.getElementById('result').innerHTML += pmiHtml;
+
+                    // Enable the next button
+                    document.getElementById('extract').disabled = false;
+                  });
+
+                  document.getElementById('extract').addEventListener('click', function() {
+                    // Call the word extraction function
+                    const result = Module.extractWords(pmiResults, normalizedText, {
+                      minPmiScore: 1.0,
+                      minLength: 2,
+                      maxLength: 10,
+                      topK: 20
+                    });
+
+                    if (result.error) {
+                      document.getElementById('result').innerHTML += `<h3>Error:</h3><pre>${result.error}</pre>`;
+                      return;
+                    }
+
+                    // Display the result
+                    let wordsHtml = '<h3>Extracted Words:</h3><pre>';
+                    for (let i = 0; i < result.words.length; i++) {
+                      wordsHtml += `${result.words[i]}\t${result.scores[i].toFixed(2)}\t${result.frequencies[i]}\t${result.verified[i] ? '✓' : ''}\n`;
+                    }
+                    wordsHtml += '</pre>';
+
+                    document.getElementById('result').innerHTML += wordsHtml;
+                  });
+                }
+              };
+            </script>
+            <script src="suzume-feedmill.js"></script>
+          </body>
+          </html>
+          EOL
+
+          # Create a simple Node.js example
+          cat > wasm/example.js << 'EOL'
+          // Example Node.js script for using suzume-feedmill WebAssembly module
+
+          // Load the WASM module
+          const SuzumeFeedmill = require('./suzume-feedmill.js');
+
+          // Sample text for testing
+          const sampleText = `今日は良い天気ですね。明日も晴れるといいな。
+          今日は　良い天気ですね。明日も晴れるといいな。
+          今日は良い天気ですね！明日も晴れるといいな～
+          人工知能の研究が進んでいます。機械学習の応用が広がっています。
+          自然言語処理技術の発展により、翻訳精度が向上しています。`;
+
+          async function runExample() {
+            try {
+              console.log('Loading suzume-feedmill WASM module...');
+              const module = await SuzumeFeedmill();
+              console.log('Module loaded successfully.\n');
+
+              // Step 1: Normalize text
+              console.log('Step 1: Normalizing text...');
+              const normResult = module.normalize(sampleText, {
+                form: 'NFKC',
+                threads: 2
+              });
+
+              console.log('Normalized text:');
+              console.log(normResult.text);
+              console.log(`Processed ${normResult.rows} rows, ${normResult.uniques} unique rows\n`);
+
+              // Step 2: Calculate PMI
+              console.log('Step 2: Calculating PMI...');
+              const pmiResult = module.calculatePmi(normResult.text, {
+                n: 2,
+                topK: 10,
+                minFreq: 1
+              });
+
+              console.log('PMI results:');
+              pmiResult.results.forEach(item => {
+                console.log(`${item.ngram}\t${item.score.toFixed(2)}\t${item.frequency}`);
+              });
+              console.log(`Processed ${pmiResult.grams} n-grams\n`);
+
+              // Format PMI results for word extraction
+              const pmiText = pmiResult.results.map(r => `${r.ngram}\t${r.score}\t${r.frequency}`).join('\n');
+
+              // Step 3: Extract words
+              console.log('Step 3: Extracting words...');
+              const wordResult = module.extractWords(pmiText, normResult.text, {
+                minPmiScore: 1.0,
+                minLength: 2,
+                maxLength: 10,
+                topK: 10
+              });
+
+              console.log('Extracted words:');
+              for (let i = 0; i < wordResult.words.length; i++) {
+                console.log(`${wordResult.words[i]}\t${wordResult.scores[i].toFixed(2)}\t${wordResult.frequencies[i]}\t${wordResult.verified[i] ? '✓' : ''}`);
+              }
+              console.log(`Extracted ${wordResult.words.length} words`);
+
+              console.log('\nExample completed successfully!');
+            } catch (error) {
+              console.error('Error:', error);
+            }
+          }
+
+          runExample();
+          EOL
+
+          # Create a README file
+          cat > wasm/README.md << 'EOL'
+          # Suzume Feedmill WebAssembly Module
+
+          This package contains the WebAssembly build of Suzume Feedmill, a high-performance corpus preprocessing engine for character-level n-gram and PMI extraction.
+
+          ## Contents
+
+          - `suzume-feedmill.js` - JavaScript glue code
+          - `suzume-feedmill.wasm` - WebAssembly binary
+          - `example.html` - Browser example
+          - `example.js` - Node.js example
+
+          ## Usage in Browser
+
+          ```html
+          <script>
+            var Module = {
+              onRuntimeInitialized: function() {
+                // Module is ready to use
+                const result = Module.normalize("Your text here", {
+                  form: 'NFKC',
+                  threads: 2
+                });
+                console.log(result);
+              }
+            };
+          </script>
+          <script src="suzume-feedmill.js"></script>
+          ```
+
+          ## Usage in Node.js
+
+          ```javascript
+          const SuzumeFeedmill = require('./suzume-feedmill.js');
+
+          SuzumeFeedmill().then(module => {
+            const result = module.normalize("Your text here", {
+              form: 'NFKC',
+              threads: 2
+            });
+            console.log(result);
+          });
+          ```
+
+          ## API
+
+          ### normalize(text, options)
+
+          Normalizes and deduplicates text.
+
+          Options:
+          - `form`: Normalization form ('NFKC' or 'NFC', default: 'NFKC')
+          - `threads`: Number of threads (default: 2)
+
+          ### calculatePmi(text, options)
+
+          Calculates PMI (Pointwise Mutual Information) for character n-grams.
+
+          Options:
+          - `n`: N-gram size (1, 2, or 3, default: 2)
+          - `topK`: Number of top results to return (default: 2500)
+          - `minFreq`: Minimum frequency threshold (default: 3)
+          - `threads`: Number of threads (default: 2)
+
+          ### extractWords(pmiText, originalText, options)
+
+          Extracts potential unknown words from PMI results.
+
+          Options:
+          - `minPmiScore`: Minimum PMI score threshold (default: 3.0)
+          - `minLength`: Minimum word length (default: 2)
+          - `maxLength`: Maximum word length (default: 10)
+          - `topK`: Number of top results to return (default: 100)
+          - `threads`: Number of threads (default: 2)
+
+          ## Examples
+
+          See `example.html` and `example.js` for complete examples.
+          EOL
+
+          # Create a zip file
+          cd wasm
+          zip -r ../suzume-feedmill-wasm.zip .
+          cd ..
+
+      # Test WebAssembly module
+      - name: Test WebAssembly module
+        run: |
+          chmod +x scripts/test-wasm.js
+          node scripts/test-wasm.js
+
+      # Upload WebAssembly artifacts to release
+      - name: Upload WebAssembly artifacts to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            suzume-feedmill-wasm.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

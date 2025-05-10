@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    tags-ignore:
+      - "v*.*.*"
+    paths-ignore:
+      - "*.md"
+      - ".github/**"
+      - ".gitignore"
+      - ".gitattributes"
+      - ".vscode/**"
+      - "examples/**"
+  pull_request:
+    branches: [main, master]
+    paths-ignore:
+      - "*.md"
+      - ".github/**"
+      - ".gitignore"
+      - ".gitattributes"
+      - ".vscode/**"
+      - "examples/**"
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install dependencies based on OS
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libicu-dev
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew update
+          brew install cmake icu4c
+          echo "Adding icu4c to PKG_CONFIG_PATH and other environment variables"
+          echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+          echo "LDFLAGS=-L$(brew --prefix icu4c)/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I$(brew --prefix icu4c)/include" >> $GITHUB_ENV
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix icu4c)" >> $GITHUB_ENV
+
+      - name: Install dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install cmake -y
+          # For Windows, we'll use the ICU libraries from vcpkg
+          vcpkg install icu:x64-windows
+          echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
+          # Make VCPKG_INSTALLATION_ROOT available for CMake
+          echo "VCPKG_INSTALLATION_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+
+      # Configure and build
+      - name: Configure CMake (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Configure CMake (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_TOOLCHAIN_FILE="$env:CMAKE_TOOLCHAIN_FILE"
+
+      - name: Build
+        run: |
+          cd build
+          cmake --build . --config Release --parallel
+
+      # Run tests
+      - name: Run tests (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+
+      - name: Run tests (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cd build
+          ctest -C Release --output-on-failure
+
+      # Create prebuilt binaries
+      - name: Create prebuilt binaries
+        run: |
+          mkdir -p build-prebuilt
+          cd build-prebuilt
+          cmake .. -DSTATIC=ON -DBUILD_TESTING=OFF
+          cmake --build . --target suzume_feedmill_cli --config Release --parallel
+
+      # Upload artifacts
+      - name: Upload prebuilt binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: suzume-feedmill-${{ matrix.os }}
+          path: |
+            build-prebuilt/bin/suzume_feedmill_cli*
+            build-prebuilt/Release/suzume_feedmill_cli*
+            build-prebuilt/suzume-feedmill*
+            build-prebuilt/Release/suzume-feedmill*
+
+  build-and-test-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install dependencies
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake libicu-dev nodejs npm
+
+      # Setup Emscripten
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v12
+        with:
+          version: latest
+          actions-cache-folder: "emsdk-cache"
+
+      # Verify Emscripten installation
+      - name: Verify Emscripten
+        run: |
+          emcc --version
+
+      # Build WebAssembly module
+      - name: Build WebAssembly module
+        run: |
+          mkdir -p build-wasm
+          cd build-wasm
+          emcmake cmake .. -DBUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
+          emmake make -j$(nproc)
+
+      # Verify WebAssembly module
+      - name: Verify WebAssembly module
+        run: |
+          ls -la build-wasm/
+          if [ ! -f build-wasm/suzume-feedmill.js ] || [ ! -f build-wasm/suzume-feedmill.wasm ]; then
+            echo "WebAssembly build failed: output files not found"
+            exit 1
+          fi
+
+      # Create wasm directory and copy files
+      - name: Prepare for testing
+        run: |
+          mkdir -p wasm
+          cp build-wasm/suzume-feedmill.js wasm/
+          cp build-wasm/suzume-feedmill.wasm wasm/
+
+      # Test WebAssembly module
+      - name: Test WebAssembly module
+        run: |
+          chmod +x scripts/test-wasm.js
+          node scripts/test-wasm.js
+
+      # Upload WebAssembly artifacts
+      - name: Upload WebAssembly artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: suzume-feedmill-wasm
+          path: |
+            wasm/suzume-feedmill.js
+            wasm/suzume-feedmill.wasm

@@ -1,0 +1,74 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "CMake Configure",
+      "type": "shell",
+      "command": "cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "CMake Build",
+      "type": "shell",
+      "command": "cmake --build build --parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc", "$msCompile"]
+    },
+    {
+      "label": "CMake Clean",
+      "type": "shell",
+      "command": "cmake --build build --target clean",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Tests",
+      "type": "shell",
+      "command": "./build/tests/suzume_feedmill_test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build WASM",
+      "type": "shell",
+      "command": "./scripts/build-wasm.sh",
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Test WASM",
+      "type": "shell",
+      "command": "node scripts/test-wasm.js",
+      "group": "test",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Example",
+      "type": "shell",
+      "command": "./build/suzume-feedmill normalize examples/output/simple-text.txt examples/output/simple-normalized.tsv",
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Advanced Example",
+      "type": "shell",
+      "command": "./build/examples/word-extraction-advanced-example examples/output/simple-text.txt examples/output",
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "Generate Code Coverage",
+      "type": "shell",
+      "command": "node scripts/run-cpp-coverage.js",
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

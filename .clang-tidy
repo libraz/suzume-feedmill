@@ -1,0 +1,9 @@
+Checks: >
+  clang-analyzer-* \
+  , modernize-* \
+  , performance-* \
+  , readability-* \
+  , cppcoreguidelines-* \
+  , google-*
+WarningsAsErrors: 'clang-analyzer-*'
+FormatStyle: file

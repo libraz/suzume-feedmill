@@ -1,0 +1,33 @@
+{
+  "recommendations": [
+    // C++ development
+    "llvm-vs-code-extensions.vscode-clangd",
+    "ms-vscode.cpptools",
+    "ms-vscode.cmake-tools",
+    "twxs.cmake",
+    "xaver.clang-format",
+
+    // Build tools
+    "ms-vscode.makefile-tools",
+    "matepek.vscode-catch2-test-adapter",
+
+    // Code quality
+    "streetsidesoftware.code-spell-checker",
+    "davidanson.vscode-markdownlint",
+
+    // Git integration
+    "eamodio.gitlens",
+
+    // JavaScript/TypeScript support
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+
+    // WebAssembly
+    "dtsvet.vscode-wasm",
+
+    // Utilities
+    "gruntfuggly.todo-tree",
+    "shardulm94.trailing-spaces",
+    "vscode-icons-team.vscode-icons"
+  ]
+}

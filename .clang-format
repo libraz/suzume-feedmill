@@ -1,0 +1,11 @@
+BasedOnStyle: Google
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+ColumnLimit: 100
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: true
+AllowShortFunctionsOnASingleLine: Empty
+PointerAlignment: Left
+IncludeBlocks: Regroup
