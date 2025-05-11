@@ -40,11 +40,25 @@ async function runTests() {
     const module = await SuzumeFeedmill();
     console.log("WASM module loaded successfully.");
 
-    // Test 1: Normalize text
-    console.log("\n=== Test 1: Normalize text ===");
+    // Simple function existence check to detect early binding issues
+    console.log("\n=== Checking function existence ===");
+    if (typeof module.normalize !== "function") {
+      throw new Error("normalize function not found in WASM module");
+    }
+    if (typeof module.calculatePmi !== "function") {
+      throw new Error("calculatePmi function not found in WASM module");
+    }
+    if (typeof module.extractWords !== "function") {
+      throw new Error("extractWords function not found in WASM module");
+    }
+    console.log("All required functions exist in WASM module");
+
+    // Test 1: Normalize text with optional fields omitted
+    console.log("\n=== Test 1: Normalize text (with optional fields) ===");
     const normResult = module.normalize(sampleText, {
       form: "NFKC",
       threads: 2,
+      // bloomFp is intentionally omitted to test optional fields
     });
 
     if (!normResult || normResult.error) {
@@ -60,12 +74,12 @@ async function runTests() {
     );
     console.log("Test 1 passed!");
 
-    // Test 2: Calculate PMI
-    console.log("\n=== Test 2: Calculate PMI ===");
+    // Test 2: Calculate PMI with optional fields omitted
+    console.log("\n=== Test 2: Calculate PMI (with optional fields) ===");
     const pmiResult = module.calculatePmi(normResult.text, {
       n: 2,
       topK: 10,
-      minFreq: 1,
+      // minFreq and threads are intentionally omitted to test optional fields
     });
 
     if (!pmiResult || pmiResult.error) {
@@ -81,8 +95,8 @@ async function runTests() {
     console.log(`Processed ${pmiResult.grams} n-grams`);
     console.log("Test 2 passed!");
 
-    // Test 3: Extract words
-    console.log("\n=== Test 3: Extract words ===");
+    // Test 3: Extract words with optional fields omitted
+    console.log("\n=== Test 3: Extract words (with optional fields) ===");
     const wordResult = module.extractWords(
       pmiResult.results
         .map((r) => `${r.ngram}\t${r.score}\t${r.frequency}`)
@@ -91,8 +105,7 @@ async function runTests() {
       {
         minPmiScore: 1.0,
         minLength: 2,
-        maxLength: 10,
-        topK: 10,
+        // maxLength, topK and threads are intentionally omitted to test optional fields
       }
     );
 

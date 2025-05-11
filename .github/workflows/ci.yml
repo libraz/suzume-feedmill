@@ -40,7 +40,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libicu-dev libgtest-dev libgmock-dev
+          sudo apt-get install -y build-essential cmake ninja-build ccache libicu-dev libgtest-dev libgmock-dev
 
           # Build and install GTest/GMock from source if needed
           if [ ! -f /usr/lib/libgmock.a ] && [ ! -f /usr/lib/x86_64-linux-gnu/libgmock.a ]; then
@@ -55,7 +55,7 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: |
           brew update
-          brew install cmake icu4c
+          brew install cmake ninja ccache icu4c
           echo "Adding icu4c to PKG_CONFIG_PATH and other environment variables"
           echo "PKG_CONFIG_PATH=$(brew --prefix icu4c)/lib/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
           echo "LDFLAGS=-L$(brew --prefix icu4c)/lib" >> $GITHUB_ENV
@@ -65,12 +65,20 @@ jobs:
       - name: Install dependencies (Windows)
         if: matrix.os == 'windows-latest'
         run: |
-          choco install cmake -y
+          choco install cmake ninja -y
           # For Windows, we'll use the ICU libraries from vcpkg
           vcpkg install icu:x64-windows
           echo "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT\scripts\buildsystems\vcpkg.cmake" >> $env:GITHUB_ENV
           # Make VCPKG_INSTALLATION_ROOT available for CMake
           echo "VCPKG_INSTALLATION_ROOT=$env:VCPKG_INSTALLATION_ROOT" >> $env:GITHUB_ENV
+
+      # Setup ccache
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ hashFiles('**/CMakeLists.txt', '**/*.[ch]pp') }}
+          restore-keys: ${{ runner.os }}-ccache-
 
       # Configure and build
       - name: Configure CMake (Unix)
@@ -78,19 +86,21 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+          cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+                   -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                   -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Configure CMake (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           mkdir -p build
           cd build
-          cmake .. -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_TOOLCHAIN_FILE="$env:CMAKE_TOOLCHAIN_FILE"
+          cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_TOOLCHAIN_FILE="$env:CMAKE_TOOLCHAIN_FILE"
 
       - name: Build
         run: |
           cd build
-          cmake --build . --config Release --parallel
+          ninja -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 
       # Run tests
       - name: Run tests (Unix)
@@ -135,14 +145,22 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libicu-dev nodejs npm
+          sudo apt-get install -y build-essential cmake ninja-build ccache libicu-dev nodejs npm
+
+      # Setup ccache for WebAssembly build
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ hashFiles('**/CMakeLists.txt', '**/*.[ch]pp') }}
+          restore-keys: ${{ runner.os }}-ccache-
 
       # Setup Emscripten
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v12
         with:
           version: "3.1.45" # Specify a fixed version for stability
-          no-cache: true # Completely disable caching
+          no-cache: false # Enable caching
           no-install: false # Force fresh installation
 
       # Verify and setup Emscripten environment
@@ -156,17 +174,19 @@ jobs:
       - name: Build WebAssembly module
         run: |
           source "$EMSDK/emsdk_env.sh"
-          mkdir -p build-wasm
-          cd build-wasm
-          emcmake cmake .. -DBUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
-          emmake make -j$(nproc)
+          mkdir -p build-wasm && cd build-wasm
+          # Build with default options (flags are set in CMakeLists.txt)
+          emcmake cmake .. -GNinja -DBUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release \
+                         -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+                         -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          ninja -j$(nproc)
 
-          # Check if build was successful
-          if [ -f "suzume-feedmill.js" ] && [ -f "suzume-feedmill.wasm" ]; then
+          # Check if build was successful (SINGLE_FILE=1 mode only produces .js file)
+          if [ -f "suzume-feedmill.js" ]; then
             echo "WebAssembly build successful"
           else
-            echo "WebAssembly build failed: output files not found"
-            find . -name "*.js" -o -name "*.wasm"
+            echo "WebAssembly build failed: output file not found"
+            find . -name "*.js"
             exit 1
           fi
 
@@ -174,8 +194,8 @@ jobs:
       - name: Verify WebAssembly module
         run: |
           ls -la build-wasm/
-          if [ ! -f build-wasm/suzume-feedmill.js ] || [ ! -f build-wasm/suzume-feedmill.wasm ]; then
-            echo "WebAssembly build failed: output files not found"
+          if [ ! -f build-wasm/suzume-feedmill.js ]; then
+            echo "WebAssembly build failed: output file not found"
             exit 1
           fi
 
@@ -183,15 +203,14 @@ jobs:
       - name: Prepare for testing
         run: |
           mkdir -p wasm
-          # Find and copy WebAssembly files (they might be in the root or in a subdirectory)
+          # Find and copy WebAssembly file (it might be in the root or in a subdirectory)
           find build-wasm -name "suzume-feedmill.js" -exec cp {} wasm/ \;
-          find build-wasm -name "suzume-feedmill.wasm" -exec cp {} wasm/ \;
 
-          # Verify files were copied
-          if [ -f "wasm/suzume-feedmill.js" ] && [ -f "wasm/suzume-feedmill.wasm" ]; then
-            echo "WebAssembly files copied successfully"
+          # Verify file was copied
+          if [ -f "wasm/suzume-feedmill.js" ]; then
+            echo "WebAssembly file copied successfully"
           else
-            echo "Failed to copy WebAssembly files"
+            echo "Failed to copy WebAssembly file"
             ls -la build-wasm/
             ls -la wasm/
             exit 1
@@ -202,17 +221,9 @@ jobs:
         run: |
           source "$EMSDK/emsdk_env.sh"
 
-          # Debug: List files in scripts directory
-          echo "Files in scripts directory:"
-          ls -la scripts/
-
           # Check if test-wasm.js exists before chmod
           if [ -f "scripts/test-wasm.js" ]; then
             chmod +x scripts/test-wasm.js
-
-            # List files in wasm directory
-            echo "Files in wasm directory:"
-            ls -la wasm/
 
             # Set environment variables for test execution
             NODE_PATH=$PWD node scripts/test-wasm.js
@@ -238,4 +249,3 @@ jobs:
           name: suzume-feedmill-wasm
           path: |
             wasm/suzume-feedmill.js
-            wasm/suzume-feedmill.wasm

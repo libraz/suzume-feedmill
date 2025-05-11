@@ -25,25 +25,9 @@ target_compile_features(suzume_wasm_lib PRIVATE cxx_std_17)
 
 # Emscripten specific settings
 if(EMSCRIPTEN)
-  # Use a completely different approach to separate compile and link flags
   # Set compile options directly on the target
   target_compile_options(suzume_wasm_lib PRIVATE
     -fvisibility=default
-  )
-
-  # Create a custom link command that will be executed after compilation
-  # This ensures the link flags are only used during linking
-  add_custom_command(
-    TARGET suzume_wasm_lib
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Applying Emscripten link flags"
-    COMMENT "Setting up Emscripten link flags"
-  )
-
-  # Store the link flags in a variable for later use in the final executable
-  set(EMSCRIPTEN_LINK_FLAGS
-    "-s EXPORT_NAME='SuzumeFeedmill' -s MODULARIZE=1 -s EXPORT_ES6=1 -s USE_ES6_IMPORT_META=0 -s ALLOW_MEMORY_GROWTH=1 -s ASSERTIONS=1 -s WASM=1 -s NO_EXIT_RUNTIME=1"
-    PARENT_SCOPE
   )
 endif()
 

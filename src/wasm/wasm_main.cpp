@@ -20,7 +20,7 @@ using namespace emscripten;
  */
 val normalize(const std::string& text, val options) {
     try {
-        // Parse options
+        // Create options
         suzume::NormalizeOptions normOpt;
 
         // Form option
@@ -90,7 +90,7 @@ val normalize(const std::string& text, val options) {
  */
 val calculatePmi(const std::string& text, val options) {
     try {
-        // Parse options
+        // Create options
         suzume::PmiOptions pmiOpt;
 
         // N-gram size
@@ -179,7 +179,7 @@ val calculatePmi(const std::string& text, val options) {
  */
 val extractWords(const std::string& pmiText, const std::string& originalText, val options) {
     try {
-        // Parse options
+        // Create options
         suzume::WordExtractionOptions extractOpt;
 
         // Min PMI score

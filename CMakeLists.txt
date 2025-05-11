@@ -33,23 +33,9 @@ if(EMSCRIPTEN)
   set(BUILD_CLI OFF)
   set(BUILD_TESTING OFF)
 
-  # Emscripten-specific compiler and linker flags
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s WASM=1 -s ALLOW_MEMORY_GROWTH=1")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s WASM=1 -s ALLOW_MEMORY_GROWTH=1")
-
-  # Export necessary functions for JavaScript
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s EXPORTED_FUNCTIONS='[\"_normalize\", \"_calculatePmi\", \"_extractWords\", \"_malloc\", \"_free\"]' -s EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\", \"getValue\", \"setValue\", \"UTF8ToString\", \"stringToUTF8\"]'")
-
-  # Enable Embind for easier C++ to JavaScript bindings
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s DISABLE_EXCEPTION_CATCHING=0 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME=\"SuzumeFeedmill\"")
-
-  # Add ICU support for Emscripten
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s USE_ICU=1")
-  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s USE_ICU=1")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s USE_ICU=1")
-
-  # Enable Embind
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --bind")
+  # Emscripten-specific compiler flags (non-linker flags only)
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility=default")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=default")
 endif()
 
 # Configure sanitizers if enabled
@@ -388,6 +374,17 @@ set_target_properties(xxhash PROPERTIES LINKER_LANGUAGE C)
 # Add subdirectories for each component
 add_subdirectory(src)
 
+# Add ICU support for WebAssembly build
+if(EMSCRIPTEN AND BUILD_WASM)
+  # Apply ICU options to core library
+  # This is needed to ensure ICU headers are extracted by Emscripten ports
+  # Using PUBLIC to propagate to all targets that depend on suzume_core_lib
+  target_compile_options(suzume_core_lib PUBLIC
+    -sUSE_ICU=1
+    -Wno-unused-command-line-argument  # Suppress "linker setting ignored during compilation" warning
+  )
+endif()
+
 if(BUILD_TESTING AND NOT EMSCRIPTEN)
   add_subdirectory(tests)
 endif()
@@ -401,6 +398,30 @@ if(EMSCRIPTEN)
   # Create WASM module
   add_executable(suzume_wasm src/wasm/wasm_main.cpp src/wasm/wasm_exports.cpp)
   target_link_libraries(suzume_wasm PRIVATE suzume_core)
+
+  # Define common WebAssembly flags
+  set(wasm_flags
+    -sALLOW_MEMORY_GROWTH=1
+    -sUSE_ICU=1
+    -sMODULARIZE=1
+    -sEXPORT_NAME=SuzumeFeedmill
+    -sSINGLE_FILE=1
+    -sWASM=1
+    -sASSERTIONS=1
+    -sNO_EXIT_RUNTIME=1
+  )
+
+  # Apply common flags to both compile and link
+  target_compile_options(suzume_wasm PRIVATE ${wasm_flags})
+
+  # Apply link options directly without intermediate variables
+  target_link_options(suzume_wasm PRIVATE
+    ${wasm_flags}
+    -sEXPORTED_FUNCTIONS='["_normalize","_calculatePmi","_extractWords","_malloc","_free"]'
+    -sEXPORTED_RUNTIME_METHODS='["ccall","cwrap","getValue","setValue","UTF8ToString","stringToUTF8"]'
+    -sDISABLE_EXCEPTION_CATCHING=0
+    --bind
+  )
 
   # Set output name and properties
   set_target_properties(suzume_wasm PROPERTIES
