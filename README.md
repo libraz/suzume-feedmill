@@ -86,6 +86,10 @@ Options:
   --form NFKC|NFC     Normalization form (default: NFKC)
   --bloom-fp 0.01     Bloom filter false positive rate
   --progress tty|json|none  Progress reporting format (default: tty)
+  --sample N          Sample N lines randomly from input
+  --min-length N      Minimum line length (0 = no minimum)
+  --max-length N      Maximum line length (0 = no maximum)
+  --stats-json        Output statistics as JSON to stdout
 ```
 
 ### PMI Calculation
@@ -99,6 +103,7 @@ Options:
   --min-freq N        Minimum frequency threshold (default: 3)
   --threads N         Number of threads (default: logical cores)
   --progress tty|json|none  Progress reporting format (default: tty)
+  --stats-json        Output statistics as JSON to stdout
 ```
 
 ### Word Extraction
@@ -114,6 +119,7 @@ Options:
   --verify true|false Verify candidates in original text (default: true)
   --threads N         Number of threads (default: logical cores)
   --progress tty|json|none  Progress reporting format (default: tty)
+  --stats-json        Output statistics as JSON to stdout
 ```
 
 ## C++ API
@@ -222,7 +228,20 @@ Here's a typical workflow for discovering unknown words in a large corpus:
 2. **Text Normalization**: Clean and normalize the text data
 
    ```bash
+   # Basic normalization
    suzume-feedmill normalize tweets.tsv normalized.tsv --threads 8
+   
+   # Normalization with sampling (process only 1000 random lines)
+   suzume-feedmill normalize tweets.tsv normalized_sample.tsv --sample 1000
+   
+   # Normalization with line length filters
+   suzume-feedmill normalize tweets.tsv normalized_filtered.tsv --min-length 10 --max-length 200
+   
+   # Normalization with JSON statistics output
+   suzume-feedmill normalize tweets.tsv normalized.tsv --stats-json > stats.json
+   
+   # Using stdin/stdout for pipeline processing
+   cat tweets.tsv | suzume-feedmill normalize - - | grep "keyword" > filtered.tsv
    ```
 
    Input example (tweets.tsv) - One text entry per line:

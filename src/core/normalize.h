@@ -77,6 +77,24 @@ std::vector<std::string> processBatch(
 );
 
 /**
+ * @brief Process a batch of lines for normalization with length filters
+ *
+ * @param lines Input lines
+ * @param form Normalization form
+ * @param bloomFalsePositiveRate Bloom filter false positive rate
+ * @param minLength Minimum line length (0 = no minimum)
+ * @param maxLength Maximum line length (0 = no maximum)
+ * @return std::vector<std::string> Normalized unique lines
+ */
+std::vector<std::string> processBatch(
+    const std::vector<std::string>& lines,
+    NormalizationForm form,
+    double bloomFalsePositiveRate,
+    uint32_t minLength,
+    uint32_t maxLength
+);
+
+/**
  * @brief Process a batch of lines for normalization
  *
  * @param lines Input lines

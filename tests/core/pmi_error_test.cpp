@@ -54,19 +54,28 @@ TEST_F(PmiErrorTest, NonExistentInputFile) {
 
 // Test invalid output path
 TEST_F(PmiErrorTest, InvalidOutputPath) {
+    // Create a directory that we'll use as a file path (which should fail)
+    std::filesystem::create_directories("test_data/directory_not_file_pmi");
+
     PmiOptions options;
     options.n = 2;
     options.topK = 10;
     options.minFreq = 2;
 
-    // Try to write to an invalid output path
-    EXPECT_THROW({
+    // Try to write to a directory instead of a file
+    // This should fail on all platforms
+    bool exceptionThrown = false;
+    try {
         core::calculatePmi(
             "test_data/pmi_valid_input.txt",
-            "/invalid/path/that/does/not/exist/output.tsv",
+            "test_data/directory_not_file_pmi",
             options
         );
-    }, std::runtime_error);
+    } catch (const std::exception&) {
+        exceptionThrown = true;
+    }
+
+    EXPECT_TRUE(exceptionThrown) << "Expected exception when writing to a directory path";
 }
 
 // Test invalid n-gram size

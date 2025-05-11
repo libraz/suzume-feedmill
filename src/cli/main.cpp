@@ -6,10 +6,18 @@
 #include <iostream>
 #include <string>
 #include <stdexcept>
+#include <filesystem>
+#include <chrono>
+#include <nlohmann/json.hpp>
 #include "options.h"
 #include "core/normalize.h"
 #include "core/pmi.h"
 #include "core/word_extraction.h"
+#include "core/text_utils.h"
+#include "io/file_io.h"
+
+// For convenience
+using json = nlohmann::json;
 
 int main(int argc, char* argv[]) {
     // Parse command-line options
@@ -24,17 +32,96 @@ int main(int argc, char* argv[]) {
     try {
         // Execute the selected command
         if (options.isNormalizeCommand()) {
-            // Run normalize
-            suzume::NormalizeResult result = suzume::core::normalize(
-                options.getInputPath(),
-                options.getOutputPath(),
-                options.getNormalizeOptions()
-            );
+            suzume::NormalizeResult result;
 
-            // Print result if progress callback is enabled
-            if (options.getNormalizeOptions().progressCallback) {
-                std::cout << "Processed " << result.rows << " rows, "
-                          << result.uniques << " unique" << std::endl;
+            // Check if sampling is enabled
+            if (options.getSampleSize() > 0) {
+                // Check if input is stdin
+                bool isStdin = suzume::io::TextFileReader::isStdin(options.getInputPath());
+
+                if (isStdin) {
+                    // Cannot sample from stdin directly, need to read all lines first
+                    std::vector<std::string> allLines = suzume::io::TextFileReader::readAllLines(options.getInputPath());
+
+                    // Sample lines from all lines
+                    std::vector<std::string> sampledLines = suzume::core::sampleLines(allLines, options.getSampleSize());
+
+                    // Create a temporary file with sampled lines
+                    std::string tempFilePath = std::filesystem::temp_directory_path().string() + "/suzume_sample_" +
+                                              std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+                    suzume::io::TextFileWriter::writeLines(tempFilePath, sampledLines);
+
+                    // Run normalize on sampled data
+                    result = suzume::core::normalize(
+                        tempFilePath,
+                        options.getOutputPath(),
+                        options.getNormalizeOptions()
+                    );
+
+                    // Remove temporary file
+                    std::filesystem::remove(tempFilePath);
+
+                    // Adjust result to indicate sampling
+                    result.rows = sampledLines.size(); // Original count before normalization
+                } else {
+                    // Sample lines from input file
+                    std::vector<std::string> sampledLines = suzume::core::sampleLines(
+                        options.getInputPath(),
+                        options.getSampleSize()
+                    );
+
+                    // Create a temporary file with sampled lines
+                    std::string tempFilePath = std::filesystem::temp_directory_path().string() + "/suzume_sample_" +
+                                              std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
+                    suzume::io::TextFileWriter::writeLines(tempFilePath, sampledLines);
+
+                    // Run normalize on sampled data
+                    result = suzume::core::normalize(
+                        tempFilePath,
+                        options.getOutputPath(),
+                        options.getNormalizeOptions()
+                    );
+
+                    // Remove temporary file
+                    std::filesystem::remove(tempFilePath);
+
+                    // Adjust result to indicate sampling
+                    result.rows = sampledLines.size(); // Original count before normalization
+                }
+            } else {
+                // Run normalize normally
+                result = suzume::core::normalize(
+                    options.getInputPath(),
+                    options.getOutputPath(),
+                    options.getNormalizeOptions()
+                );
+            }
+
+            // Output results
+            if (options.isStatsJsonEnabled()) {
+                // Output statistics as JSON
+                json stats = {
+                    {"command", "normalize"},
+                    {"input", options.getInputPath()},
+                    {"output", options.getOutputPath()},
+                    {"sampled", options.getSampleSize() > 0},
+                    {"sample_size", options.getSampleSize()},
+                    {"rows", result.rows},
+                    {"uniques", result.uniques},
+                    {"duplicates", result.duplicates},
+                    {"elapsed_ms", result.elapsedMs},
+                    {"mb_per_sec", result.mbPerSec}
+                };
+                std::cout << stats.dump() << std::endl;
+            } else if (options.getNormalizeOptions().progressCallback) {
+                // Print result if progress callback is enabled
+                if (options.getSampleSize() > 0) {
+                    std::cout << "Sampled " << options.getSampleSize() << " lines, processed "
+                            << result.rows << " rows, " << result.uniques << " unique" << std::endl;
+                } else {
+                    std::cout << "Processed " << result.rows << " rows, "
+                            << result.uniques << " unique" << std::endl;
+                }
             }
 
             return 0;
@@ -46,8 +133,21 @@ int main(int argc, char* argv[]) {
                 options.getPmiOptions()
             );
 
-            // Print result if progress callback is enabled
-            if (options.getPmiOptions().progressCallback) {
+            if (options.isStatsJsonEnabled()) {
+                // Output statistics as JSON
+                json stats = {
+                    {"command", "pmi"},
+                    {"input", options.getInputPath()},
+                    {"output", options.getOutputPath()},
+                    {"n", options.getPmiOptions().n},
+                    {"grams", result.grams},
+                    {"distinct_ngrams", result.distinctNgrams},
+                    {"elapsed_ms", result.elapsedMs},
+                    {"mb_per_sec", result.mbPerSec}
+                };
+                std::cout << stats.dump() << std::endl;
+            } else if (options.getPmiOptions().progressCallback) {
+                // Print result if progress callback is enabled
                 std::cout << "Processed " << result.grams << " n-grams" << std::endl;
             }
 
@@ -60,8 +160,20 @@ int main(int argc, char* argv[]) {
                 options.getWordExtractionOptions()
             );
 
-            // Print result if progress callback is enabled
-            if (options.getWordExtractionOptions().progressCallback) {
+            if (options.isStatsJsonEnabled()) {
+                // Output statistics as JSON
+                json stats = {
+                    {"command", "word-extract"},
+                    {"pmi_input", options.getInputPath()},
+                    {"original_text", options.getOriginalTextPath()},
+                    {"output", options.getOutputPath()},
+                    {"words_count", result.words.size()},
+                    {"processing_time_ms", result.processingTimeMs},
+                    {"memory_usage_bytes", result.memoryUsageBytes}
+                };
+                std::cout << stats.dump() << std::endl;
+            } else if (options.getWordExtractionOptions().progressCallback) {
+                // Print result if progress callback is enabled
                 std::cout << "Extracted " << result.words.size() << " unknown words" << std::endl;
             }
 

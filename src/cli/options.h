@@ -72,6 +72,13 @@ public:
     const suzume::NormalizeOptions& getNormalizeOptions() const;
 
     /**
+     * @brief Get the sample size
+     *
+     * @return size_t Sample size (0 means no sampling)
+     */
+    size_t getSampleSize() const;
+
+    /**
      * @brief Get the PMI options
      *
      * @return const suzume::PmiOptions& PMI options
@@ -110,6 +117,14 @@ public:
     bool isWordExtractCommand() const;
 
     /**
+     * @brief Check if stats-json option was enabled
+     *
+     * @return true If stats-json option was enabled
+     * @return false Otherwise
+     */
+    bool isStatsJsonEnabled() const;
+
+    /**
      * @brief Get the version string
      *
      * @return std::string Version string
@@ -140,6 +155,12 @@ private:
     ProgressFormat pmiProgressFormat{ProgressFormat::TTY};
     ProgressFormat wordExtractProgressFormat{ProgressFormat::TTY};
 
+    // Stats JSON output
+    bool statsJson{false};
+
+    // Sample size for normalize command
+    size_t sampleSize{0};
+
     // Setup methods
     void setupNormalizeCommand();
     void setupPmiCommand();
@@ -149,6 +170,11 @@ private:
     // Progress callback functions
     static void ttyProgressCallback(double ratio);
     static void jsonProgressCallback(double ratio);
+
+    // ETA calculation helpers
+    static void ttyProgressCallbackWithEta(double ratio);
+    static void jsonProgressCallbackWithEta(double ratio);
+    static double calculateEta(double ratio);
 };
 
 } // namespace cli

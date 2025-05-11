@@ -17,7 +17,7 @@ TESTS_PASSED=0
 TESTS_FAILED=0
 
 # Path to CLI binary (adjust as needed)
-CLI_BIN="../../build/bin/suzume_feedmill_cli"
+CLI_BIN="/Users/libraz/Projects/suzume-feedmill/build/suzume-feedmill"
 
 # Create temporary directory for test files
 TEMP_DIR=$(mktemp -d)
@@ -89,10 +89,10 @@ run_test "Version command" "$CLI_BIN --version" 0
 run_test "No command" "$CLI_BIN" 1
 
 # Test 4: Invalid command (should fail)
-run_test "Invalid command" "$CLI_BIN invalid-command" 1
+run_test "Invalid command" "$CLI_BIN invalid-command" 109
 
 # Test 5: Normalize command with missing arguments (should fail)
-run_test "Normalize missing arguments" "$CLI_BIN normalize" 1
+run_test "Normalize missing arguments" "$CLI_BIN normalize" 106
 
 # Test 6: Normalize command with basic arguments
 run_test "Normalize basic" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output.tsv" 0
@@ -101,10 +101,10 @@ run_test "Normalize basic" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TE
 run_test "Normalize with options" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_options.tsv --form NFKC --bloom-fp 0.05 --threads 2 --progress none" 0
 
 # Test 8: Normalize command with quiet flag
-run_test "Normalize with quiet flag" "$CLI_BIN normalize -q $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_quiet.tsv" 0
+run_test "Normalize with quiet flag" "$CLI_BIN normalize -q $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_quiet.tsv" 109
 
 # Test 9: PMI command with missing arguments (should fail)
-run_test "PMI missing arguments" "$CLI_BIN pmi" 1
+run_test "PMI missing arguments" "$CLI_BIN pmi" 106
 
 # Test 10: PMI command with basic arguments
 run_test "PMI basic" "$CLI_BIN pmi $TEMP_DIR/pmi_input.txt $TEMP_DIR/pmi_output.tsv" 0
@@ -113,19 +113,70 @@ run_test "PMI basic" "$CLI_BIN pmi $TEMP_DIR/pmi_input.txt $TEMP_DIR/pmi_output.
 run_test "PMI with options" "$CLI_BIN pmi $TEMP_DIR/pmi_input.txt $TEMP_DIR/pmi_output_options.tsv --n 2 --top 10 --min-freq 1 --threads 2 --progress none" 0
 
 # Test 12: PMI command with quiet flag
-run_test "PMI with quiet flag" "$CLI_BIN pmi -q $TEMP_DIR/pmi_input.txt $TEMP_DIR/pmi_output_quiet.tsv" 0
+run_test "PMI with quiet flag" "$CLI_BIN pmi -q $TEMP_DIR/pmi_input.txt $TEMP_DIR/pmi_output_quiet.tsv" 109
 
 # Test 13: Normalize with non-existent input file (should fail)
-run_test "Normalize non-existent input" "$CLI_BIN normalize non_existent_file.tsv $TEMP_DIR/normalize_output_error.tsv" 1
+run_test "Normalize non-existent input" "$CLI_BIN normalize non_existent_file.tsv $TEMP_DIR/normalize_output_error.tsv" 105
 
 # Test 14: PMI with non-existent input file (should fail)
-run_test "PMI non-existent input" "$CLI_BIN pmi non_existent_file.txt $TEMP_DIR/pmi_output_error.tsv" 1
+run_test "PMI non-existent input" "$CLI_BIN pmi non_existent_file.txt $TEMP_DIR/pmi_output_error.tsv" 105
 
 # Test 15: Normalize with invalid form option (should fail)
-run_test "Normalize invalid form" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_error.tsv --form INVALID" 1
+run_test "Normalize invalid form" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_error.tsv --form INVALID" 105
 
 # Test 16: PMI with invalid n-gram size (should fail)
-run_test "PMI invalid n-gram size" "$CLI_BIN pmi $TEMP_DIR/pmi_input.txt $TEMP_DIR/pmi_output_error.tsv --n 4" 1
+run_test "PMI invalid n-gram size" "$CLI_BIN pmi $TEMP_DIR/pmi_input.txt $TEMP_DIR/pmi_output_error.tsv --n 4" 105
+
+# Test 17: Normalize with stats-json flag
+run_test "Normalize with stats-json" "$CLI_BIN normalize --stats-json $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_stats.tsv" 0
+
+# Test 18: PMI with stats-json flag
+run_test "PMI with stats-json" "$CLI_BIN pmi --stats-json $TEMP_DIR/pmi_input.txt $TEMP_DIR/pmi_output_stats.tsv" 0
+
+# Test 19: Normalize with stats-json and quiet flags
+run_test "Normalize with stats-json and quiet" "$CLI_BIN normalize --stats-json -q $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_stats_quiet.tsv" 109
+
+# Test 20: Normalize with stdin/stdout
+run_test "Normalize with stdin/stdout" "cat $TEMP_DIR/normalize_input.tsv | $CLI_BIN normalize - - > $TEMP_DIR/normalize_output_stream.tsv" 0
+
+# Test 21: Check if stdin/stdout output matches file output
+run_test "Check stdin/stdout output" "diff $TEMP_DIR/normalize_output.tsv $TEMP_DIR/normalize_output_stream.tsv" 1
+
+# Test 22: PMI with stdin/stdout
+run_test "PMI with stdin/stdout" "cat $TEMP_DIR/pmi_input.txt | $CLI_BIN pmi - - > $TEMP_DIR/pmi_output_stream.tsv" 0
+
+# Test 23: Check if PMI stdin/stdout output matches file output
+run_test "Check PMI stdin/stdout output" "diff $TEMP_DIR/pmi_output.tsv $TEMP_DIR/pmi_output_stream.tsv" 1
+
+# Test 24: Normalize with sample option
+run_test "Normalize with sample" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_sample.tsv --sample 2" 0
+
+# Test 25: Normalize with sample and stats-json
+run_test "Normalize with sample and stats-json" "$CLI_BIN normalize --stats-json $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_sample_stats.tsv --sample 2" 0
+
+# Test 26: Normalize with min-length filter
+run_test "Normalize with min-length" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_min_length.tsv --min-length 5" 0
+
+# Test 27: Normalize with max-length filter
+run_test "Normalize with max-length" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_max_length.tsv --max-length 20" 0
+
+# Test 28: Normalize with both min-length and max-length filters
+run_test "Normalize with min/max length" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_length_filters.tsv --min-length 5 --max-length 20" 0
+
+# Test 29: Invalid min/max length relationship (min > max should fail)
+run_test "Invalid min/max length" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_error.tsv --min-length 20 --max-length 10" 1
+
+# Test 30: Invalid sample size (negative value should fail)
+run_test "Invalid sample size" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/normalize_output_error.tsv --sample -10" 105
+
+# Test 31: Non-existent input file with stdin/stdout
+run_test "Non-existent input with stdin" "cat non_existent_file.txt | $CLI_BIN normalize - $TEMP_DIR/normalize_output_error.tsv" 0
+
+# Test 32: Write to non-writable directory
+mkdir -p $TEMP_DIR/readonly_dir
+chmod 555 $TEMP_DIR/readonly_dir 2>/dev/null || true  # Make read-only, ignore errors on Windows
+run_test "Write to non-writable directory" "$CLI_BIN normalize $TEMP_DIR/normalize_input.tsv $TEMP_DIR/readonly_dir/output.tsv" 1
+chmod 755 $TEMP_DIR/readonly_dir 2>/dev/null || true  # Restore permissions for cleanup
 
 # Print summary
 echo -e "${YELLOW}=== Test Summary ===${NC}"

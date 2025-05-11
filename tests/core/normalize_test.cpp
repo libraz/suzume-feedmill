@@ -51,16 +51,21 @@ TEST_F(NormalizeTest, BasicNormalization) {
 
     // Check result
     EXPECT_EQ(7, result.rows);
-    EXPECT_EQ(1, result.uniques);
+    // Now that # lines are not excluded, we expect 2 unique lines
+    EXPECT_EQ(2, result.uniques);
 
     // Check output file
     std::ifstream outputFile("test_data/normalize_test_output.tsv");
     std::string line;
-    std::getline(outputFile, line);
-    EXPECT_EQ("hello world", line);
+    std::vector<std::string> lines;
+    while (std::getline(outputFile, line)) {
+        lines.push_back(line);
+    }
 
-    // No more lines
-    EXPECT_FALSE(std::getline(outputFile, line));
+    // Check that we have the expected lines
+    EXPECT_EQ(2, lines.size());
+    EXPECT_TRUE(std::find(lines.begin(), lines.end(), "hello world") != lines.end());
+    EXPECT_TRUE(std::find(lines.begin(), lines.end(), "#comment line") != lines.end());
 }
 
 // Test NFC normalization
@@ -122,7 +127,8 @@ TEST_F(NormalizeTest, ProgressCallback) {
 
     // Check result
     EXPECT_EQ(7, result.rows);
-    EXPECT_EQ(1, result.uniques);
+    // Now that # lines are not excluded, we expect 2 unique lines
+    EXPECT_EQ(2, result.uniques);
 }
 
 // Test batch processing
@@ -142,8 +148,11 @@ TEST_F(NormalizeTest, BatchProcessing) {
     std::vector<std::string> result = processBatch(batch, NormalizationForm::NFKC, 0.01);
 
     // Check result
-    ASSERT_EQ(1, result.size());
-    EXPECT_EQ("hello world", result[0]);
+    ASSERT_EQ(2, result.size());
+    // Sort the results for consistent checking
+    std::sort(result.begin(), result.end());
+    EXPECT_EQ("#comment line", result[0]);
+    EXPECT_EQ("hello world", result[1]);
 }
 
 } // namespace test

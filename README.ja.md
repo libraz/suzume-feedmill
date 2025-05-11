@@ -100,6 +100,10 @@ suzume-feedmill normalize <in.tsv> <out.tsv> [オプション]
   --form NFKC|NFC     正規化形式（デフォルト: NFKC）
   --bloom-fp 0.01     Bloomフィルタの偽陽性率
   --progress tty|json|none  進捗報告形式（デフォルト: tty）
+  --sample N          入力からランダムにN行をサンプリング
+  --min-length N      最小行長（0 = 最小値なし）
+  --max-length N      最大行長（0 = 最大値なし）
+  --stats-json        統計情報をJSON形式で標準出力に出力
 ```
 
 ### PMI 計算
@@ -113,6 +117,7 @@ suzume-feedmill pmi <in.txt> <out.tsv> [オプション]
   --min-freq N        最小頻度閾値（デフォルト: 3）
   --threads N         スレッド数（デフォルト: 論理コア数）
   --progress tty|json|none  進捗報告形式（デフォルト: tty）
+  --stats-json        統計情報をJSON形式で標準出力に出力
 ```
 
 ### 未知語抽出
@@ -128,6 +133,7 @@ suzume-feedmill word-extract <pmi-results.tsv> <original-text.txt> <output.tsv> 
   --verify true|false 元テキストで候補を検証（デフォルト: true）
   --threads N         スレッド数（デフォルト: 論理コア数）
   --progress tty|json|none  進捗報告形式（デフォルト: tty）
+  --stats-json        統計情報をJSON形式で標準出力に出力
 ```
 
 ## C++ API
@@ -236,7 +242,20 @@ n-gram PMI ファイルは 3 つの列を持つタブ区切り値（TSV）ファ
 2. **テキスト正規化**: テキストデータのクリーニングと正規化
 
    ```bash
+   # 基本的な正規化
    suzume-feedmill normalize tweets.tsv normalized.tsv --threads 8
+   
+   # サンプリングを使用した正規化（ランダムに1000行だけ処理）
+   suzume-feedmill normalize tweets.tsv normalized_sample.tsv --sample 1000
+   
+   # 行長フィルタを使用した正規化
+   suzume-feedmill normalize tweets.tsv normalized_filtered.tsv --min-length 10 --max-length 200
+   
+   # JSON統計情報出力を使用した正規化
+   suzume-feedmill normalize tweets.tsv normalized.tsv --stats-json > stats.json
+   
+   # stdin/stdoutを使用したパイプライン処理
+   cat tweets.tsv | suzume-feedmill normalize - - | grep "キーワード" > filtered.tsv
    ```
 
    入力例（tweets.tsv）- 1 行に 1 つのテキストエントリ:

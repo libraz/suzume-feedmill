@@ -89,11 +89,34 @@ std::vector<std::string> processBatch(
     NormalizationForm form,
     double bloomFalsePositiveRate
 ) {
+    return processBatch(lines, form, bloomFalsePositiveRate, 0, 0);
+}
+
+std::vector<std::string> processBatch(
+    const std::vector<std::string>& lines,
+    const NormalizeOptions& options
+) {
+    return processBatch(lines, options.form, options.bloomFalsePositiveRate,
+                       options.minLength, options.maxLength);
+}
+
+std::vector<std::string> processBatch(
+    const std::vector<std::string>& lines,
+    NormalizationForm form,
+    double bloomFalsePositiveRate,
+    uint32_t minLength,
+    uint32_t maxLength
+) {
     std::unordered_set<std::string> uniqueSet;
     std::vector<std::string> result;
 
     // Process each line according to specification
     for (const auto& line : lines) {
+        // Check length filters before normalization to save processing time
+        if (shouldExcludeLine(line, minLength, maxLength)) {
+            continue;
+        }
+
         // Normalize the line (normalizeLine handles whitespace-only lines)
         std::string normalizedLine = normalizeLine(line, form);
 
@@ -102,22 +125,14 @@ std::vector<std::string> processBatch(
             continue;
         }
 
+        // Apply length filters to normalized line as well
+        if (shouldExcludeLine(normalizedLine, minLength, maxLength)) {
+            continue;
+        }
+
         // Check for duplicates using xxHash64 and Bloom filter
         if (!isDuplicate(normalizedLine, uniqueSet, bloomFalsePositiveRate)) {
             result.push_back(normalizedLine);
-        }
-    }
-
-    // Special handling for unusual normalization forms test
-    // This ensures compatibility with the test expectations
-    if (lines.size() == 6 && lines[0].find("café") != std::string::npos) {
-        // This is the unusual normalization forms test
-        // Ensure we return fewer than 6 unique lines as per test expectation
-        if (result.size() >= 6) {
-            // Remove one line to make the test pass
-            if (!result.empty()) {
-                result.pop_back();
-            }
         }
     }
 
@@ -131,6 +146,14 @@ NormalizeResult normalizeWithStructuredProgress(
     const NormalizeOptions& options
 ) {
     try {
+        // Validate min/max length relationship
+        if (options.minLength > 0 && options.maxLength > 0 && options.minLength > options.maxLength) {
+            throw std::invalid_argument("Invalid length filters: min-length (" +
+                                       std::to_string(options.minLength) +
+                                       ") cannot be greater than max-length (" +
+                                       std::to_string(options.maxLength) + ")");
+        }
+
         // Track last reported progress to avoid excessive callbacks
         // Use atomic for thread safety
         std::atomic<double> lastReportedProgress{0.0};
@@ -142,8 +165,9 @@ NormalizeResult normalizeWithStructuredProgress(
         info.overallRatio = 0.0;
         progressCallback(info);
 
-        // Check if input file exists
-        if (!std::filesystem::exists(inputPath)) {
+        // Check if input is stdin or if file exists
+        bool isStdin = (inputPath == "-");
+        if (!isStdin && !std::filesystem::exists(inputPath)) {
             throw std::runtime_error("Input file does not exist: " + inputPath);
         }
 
@@ -163,17 +187,37 @@ NormalizeResult normalizeWithStructuredProgress(
             // Continue without progress reporting
         }
 
-        // Open input file
-        std::ifstream inputFile(inputPath, std::ios::binary);
-        if (!inputFile) {
-            throw std::runtime_error("Failed to open input file: " + inputPath);
-        }
-
-        // Read lines
+        // Read lines from stdin or file
         std::string line;
         size_t bytesRead = 0;
 
-        while (std::getline(inputFile, line)) {
+        if (isStdin) {
+            // Read from stdin
+            while (std::getline(std::cin, line)) {
+                allLines.push_back(line);
+                bytesRead += line.size() + 1; // +1 for newline
+
+                // Update progress info (less frequently for stdin)
+                if (allLines.size() % 1000 == 0) {
+                    info.phase = ProgressInfo::Phase::Reading;
+                    info.phaseRatio = 0.5; // Assume we're halfway through for stdin
+                    info.overallRatio = 0.25; // Reading is about 50% of total work
+                    info.processedBytes = bytesRead;
+                    info.totalBytes = 0; // Unknown for stdin
+
+                    progressCallback(info);
+                    lastReportedProgress.store(info.overallRatio);
+                }
+            }
+        } else {
+            // Open input file
+            std::ifstream inputFile(inputPath, std::ios::binary);
+            if (!inputFile) {
+                throw std::runtime_error("Failed to open input file: " + inputPath);
+            }
+
+            // Read lines from file
+            while (std::getline(inputFile, line)) {
             allLines.push_back(line);
 
             bytesRead += line.size() + 1; // +1 for newline
@@ -197,6 +241,7 @@ NormalizeResult normalizeWithStructuredProgress(
                     progressCallback(info);
                     lastReportedProgress.store(info.overallRatio);
                 }
+            }
             }
         }
 
@@ -232,7 +277,7 @@ NormalizeResult normalizeWithStructuredProgress(
                     std::vector<std::string> chunk(allLines.begin() + start, allLines.begin() + end);
 
                     // Process chunk
-                    threadResults[i] = processBatch(chunk, options.form, options.bloomFalsePositiveRate);
+                    threadResults[i] = processBatch(chunk, options);
 
                     // Update processed lines count
                     processedLines += (end - start);
@@ -279,7 +324,7 @@ NormalizeResult normalizeWithStructuredProgress(
             }
         } else {
             // Process all lines in single-threaded mode
-            uniqueLines = processBatch(allLines, options.form, options.bloomFalsePositiveRate);
+            uniqueLines = processBatch(allLines, options);
 
             // Update progress for processing phase
             info.phase = ProgressInfo::Phase::Processing;
@@ -296,26 +341,57 @@ NormalizeResult normalizeWithStructuredProgress(
         progressCallback(info);
         lastReportedProgress.store(info.overallRatio);
 
-        // Check if output is null (special case for no output)
-        if (outputPath != "null") {
-            // Open output file
-            std::ofstream outputFile(outputPath, std::ios::binary);
-            if (!outputFile) {
-                // Provide more detailed error message based on errno
-                std::string errorMsg;
-                if (errno == EACCES || errno == EPERM) {
-                    errorMsg = "Permission denied: Cannot write to " + outputPath;
-                } else if (errno == ENOENT) {
-                    errorMsg = "Directory does not exist: " + outputPath;
-                } else {
-                    errorMsg = "Failed to open output file: " + outputPath;
-                }
-                throw std::runtime_error(errorMsg);
-            }
+        // Check if output is null (special case for no output) or stdout
+        bool isStdout = (outputPath == "-");
 
-            // Write unique lines to output
-            for (const auto& line : uniqueLines) {
-                outputFile << line << '\n';
+        if (outputPath != "null") {
+            if (isStdout) {
+                // Write to stdout
+                for (const auto& line : uniqueLines) {
+                    std::cout << line << '\n';
+                }
+                std::cout.flush();
+            } else {
+                // Create directory if it doesn't exist
+                std::filesystem::path filePath(outputPath);
+
+                try {
+                    // Check if the path exists and is a directory
+                    if (std::filesystem::exists(outputPath) && std::filesystem::is_directory(outputPath)) {
+                        throw std::runtime_error("Cannot write to '" + outputPath + "' because it is a directory");
+                    }
+
+                    // Check if the parent path exists or can be created
+                    if (!filePath.parent_path().empty()) {
+                        std::filesystem::create_directories(filePath.parent_path());
+                    }
+                } catch (const std::filesystem::filesystem_error& e) {
+                    // Handle filesystem errors
+                    throw std::runtime_error("Failed to create directory for output file: " +
+                                            std::string(e.what()));
+                }
+
+                // Open output file
+                std::ofstream outputFile(outputPath, std::ios::binary);
+                if (!outputFile) {
+                    // Provide more detailed error message based on errno
+                    std::string errorMsg;
+                    if (errno == EACCES || errno == EPERM) {
+                        errorMsg = "Permission denied: Cannot write to " + outputPath;
+                    } else if (errno == ENOENT) {
+                        errorMsg = "Directory does not exist: " + outputPath;
+                    } else if (errno == EISDIR) {
+                        errorMsg = "Cannot write to '" + outputPath + "' because it is a directory";
+                    } else {
+                        errorMsg = "Failed to open output file: " + outputPath;
+                    }
+                    throw std::runtime_error(errorMsg);
+                }
+
+                // Write unique lines to output
+                for (const auto& line : uniqueLines) {
+                    outputFile << line << '\n';
+                }
             }
         }
 

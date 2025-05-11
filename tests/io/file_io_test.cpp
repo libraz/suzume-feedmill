@@ -199,6 +199,47 @@ TEST_F(FileIOTest, WriteContent) {
     EXPECT_EQ(content, readContent);
 }
 
+// Test file not found error
+TEST_F(FileIOTest, FileNotFoundError) {
+    // Attempt to read a non-existent file
+    EXPECT_THROW(TextFileReader::readAllLines("non_existent_file.txt"), std::runtime_error);
+}
+
+// Test write permission error
+TEST_F(FileIOTest, WritePermissionError) {
+    // Create a directory that we can't write to
+    std::filesystem::create_directories("test_data/readonly_dir");
+
+    // Make the directory read-only if possible
+    #ifndef _WIN32
+    // On Unix-like systems, we can use chmod
+    // Use (void) to explicitly ignore the return value
+    (void)system("chmod 555 test_data/readonly_dir");
+
+    // Attempt to write to a file in a read-only directory
+    std::vector<std::string> lines = {"Test line"};
+    EXPECT_THROW(TextFileWriter::writeLines("test_data/readonly_dir/test.txt", lines), std::runtime_error);
+
+    // Restore permissions for cleanup
+    (void)system("chmod 755 test_data/readonly_dir");
+    #endif
+}
+
+// Test stdin/stdout detection
+TEST_F(FileIOTest, StdinStdoutDetection) {
+    // Test stdin detection
+    EXPECT_TRUE(TextFileReader::isStdin("-"));
+    EXPECT_FALSE(TextFileReader::isStdin("file.txt"));
+
+    // Test stdout detection
+    EXPECT_TRUE(TextFileWriter::isStdout("-"));
+    EXPECT_FALSE(TextFileWriter::isStdout("file.txt"));
+}
+
+// Note: We can't easily test actual stdin/stdout I/O in unit tests
+// as they would require interactive input/output or redirecting streams.
+// These would be better tested in integration tests.
+
 } // namespace test
 } // namespace io
 } // namespace suzume

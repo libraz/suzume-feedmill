@@ -49,17 +49,26 @@ TEST_F(NormalizeErrorTest, NonExistentInputFile) {
 
 // Test invalid output path
 TEST_F(NormalizeErrorTest, InvalidOutputPath) {
+    // Create a directory that we'll use as a file path (which should fail)
+    std::filesystem::create_directories("test_data/directory_not_file");
+
     NormalizeOptions options;
     options.form = NormalizationForm::NFKC;
 
-    // Try to write to an invalid output path
-    EXPECT_THROW({
+    // Try to write to a directory instead of a file
+    // This should fail on all platforms
+    bool exceptionThrown = false;
+    try {
         core::normalize(
             "test_data/valid_input.tsv",
-            "/invalid/path/that/does/not/exist/output.tsv",
+            "test_data/directory_not_file",
             options
         );
-    }, std::runtime_error);
+    } catch (const std::exception&) {
+        exceptionThrown = true;
+    }
+
+    EXPECT_TRUE(exceptionThrown) << "Expected exception when writing to a directory path";
 }
 
 // Test invalid normalization form

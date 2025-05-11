@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <functional>
+#include <iostream>
 
 namespace suzume {
 namespace io {
@@ -19,11 +20,20 @@ namespace io {
 class TextFileReader {
 public:
     /**
-     * @brief Read all lines from a file
+     * @brief Check if path is stdin indicator
      *
      * @param path File path
+     * @return true If path is "-" (stdin)
+     * @return false Otherwise
+     */
+    static bool isStdin(const std::string& path);
+
+    /**
+     * @brief Read all lines from a file or stdin
+     *
+     * @param path File path or "-" for stdin
      * @param progressCallback Progress callback function
-     * @return std::vector<std::string> Lines read from the file
+     * @return std::vector<std::string> Lines read from the file or stdin
      */
     static std::vector<std::string> readAllLines(
         const std::string& path,
@@ -31,9 +41,9 @@ public:
     );
 
     /**
-     * @brief Process a file line by line
+     * @brief Process a file or stdin line by line
      *
-     * @param path File path
+     * @param path File path or "-" for stdin
      * @param lineProcessor Function to process each line
      * @param progressCallback Progress callback function
      */
@@ -44,9 +54,9 @@ public:
     );
 
     /**
-     * @brief Read entire file content as a string
+     * @brief Read entire file or stdin content as a string
      *
-     * @param path File path
+     * @param path File path or "-" for stdin
      * @param progressCallback Progress callback function
      * @return std::string File content
      */
@@ -62,9 +72,18 @@ public:
 class TextFileWriter {
 public:
     /**
-     * @brief Write lines to a file
+     * @brief Check if path is stdout indicator
      *
      * @param path File path
+     * @return true If path is "-" (stdout)
+     * @return false Otherwise
+     */
+    static bool isStdout(const std::string& path);
+
+    /**
+     * @brief Write lines to a file or stdout
+     *
+     * @param path File path or "-" for stdout
      * @param lines Lines to write
      * @param progressCallback Progress callback function
      */
@@ -75,9 +94,9 @@ public:
     );
 
     /**
-     * @brief Write content to a file
+     * @brief Write content to a file or stdout
      *
-     * @param path File path
+     * @param path File path or "-" for stdout
      * @param content Content to write
      */
     static void writeContent(

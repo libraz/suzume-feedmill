@@ -70,6 +70,8 @@ struct NormalizeOptions {
   uint32_t threads = 0;                             ///< Number of threads (0 = auto)
   ProgressFormat progressFormat = ProgressFormat::TTY; ///< Progress output format
   double progressStep = 0.05;                       ///< Progress reporting granularity (0.0-1.0)
+  uint32_t minLength = 0;                           ///< Minimum line length (0 = no minimum)
+  uint32_t maxLength = 0;                           ///< Maximum line length (0 = no maximum)
 
   /**
    * @brief Callback function for progress updates

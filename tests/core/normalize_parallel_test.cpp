@@ -98,8 +98,7 @@ TEST_F(NormalizeParallelTest, ParallelProcessingWithStructuredProgress) {
     int lineCount = 0;
     while (std::getline(outputFile, line)) {
         lineCount++;
-        // Comment lines should be excluded
-        EXPECT_FALSE(line.find("#") == 0);
+        // Comment lines are now included, so we don't check for their exclusion
     }
 
     // Check that the number of lines in the output file matches the reported uniques

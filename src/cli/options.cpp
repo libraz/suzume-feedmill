@@ -5,6 +5,8 @@
 
 #include "options.h"
 #include <iostream>
+#include <chrono>
+#include <sstream>
 
 namespace suzume {
 namespace cli {
@@ -34,6 +36,95 @@ void OptionsParser::jsonProgressCallback(double ratio) {
     }
 }
 
+// ETA calculation helper
+double OptionsParser::calculateEta(double ratio) {
+    static auto startTime = std::chrono::steady_clock::now();
+    static double lastRatio = 0.0;
+    static double lastEta = 0.0;
+
+    // Skip if ratio is 0 (just starting) or 1 (already finished)
+    if (ratio <= 0.0 || ratio >= 1.0) {
+        lastRatio = ratio;
+        return 0.0;
+    }
+
+    // Calculate elapsed time
+    auto now = std::chrono::steady_clock::now();
+    double elapsedSeconds = std::chrono::duration<double>(now - startTime).count();
+
+    // Calculate ETA
+    double eta = 0.0;
+    if (ratio > 0.0) {
+        // Estimate total time based on current progress
+        double totalEstimatedTime = elapsedSeconds / ratio;
+        // Calculate remaining time
+        eta = totalEstimatedTime - elapsedSeconds;
+    }
+
+    // Smooth ETA to avoid jumps
+    if (lastRatio > 0.0 && lastEta > 0.0) {
+        // Apply simple exponential smoothing
+        double alpha = 0.2; // Smoothing factor
+        eta = alpha * eta + (1 - alpha) * lastEta;
+    }
+
+    // Update last values
+    lastRatio = ratio;
+    lastEta = eta;
+
+    return eta;
+}
+
+// Progress callback with ETA
+void OptionsParser::ttyProgressCallbackWithEta(double ratio) {
+    static int lastPercent = -1;
+    int percent = static_cast<int>(ratio * 100);
+
+    if (percent != lastPercent) {
+        // Calculate ETA
+        double eta = calculateEta(ratio);
+
+        // Format ETA
+        std::string etaStr;
+        if (ratio <= 0.0 || ratio >= 1.0) {
+            etaStr = "";
+        } else {
+            int etaMinutes = static_cast<int>(eta) / 60;
+            int etaSeconds = static_cast<int>(eta) % 60;
+
+            std::stringstream ss;
+            ss << " ETA: ";
+            if (etaMinutes > 0) {
+                ss << etaMinutes << "m ";
+            }
+            ss << etaSeconds << "s";
+            etaStr = ss.str();
+        }
+
+        // Display progress with ETA
+        std::cerr << "\rProgress: " << percent << "%" << etaStr << std::flush;
+        lastPercent = percent;
+
+        if (percent >= 100) {
+            std::cerr << std::endl;
+        }
+    }
+}
+
+void OptionsParser::jsonProgressCallbackWithEta(double ratio) {
+    static int lastPercent = -1;
+    int percent = static_cast<int>(ratio * 100);
+
+    if (percent != lastPercent) {
+        // Calculate ETA
+        double eta = calculateEta(ratio);
+
+        // Output JSON with ETA
+        std::cerr << "{\"progress\":" << percent << ", \"eta\":" << eta << "}" << std::endl;
+        lastPercent = percent;
+    }
+}
+
 OptionsParser::OptionsParser() {
     // Setup commands and options
     setupNormalizeCommand();
@@ -47,11 +138,16 @@ void OptionsParser::setupNormalizeCommand() {
     normalizeCommand = app.add_subcommand("normalize", "Normalize and deduplicate text data");
 
     // Add input/output options
-    normalizeCommand->add_option("input", inputPath, "Input file path")
+    normalizeCommand->add_option("input", inputPath, "Input file path (use - for stdin)")
         ->required()
-        ->check(CLI::ExistingFile);
+        ->check([](const std::string& path) {
+            // Allow "-" for stdin
+            if (path == "-") return std::string();
+            // Otherwise check if file exists
+            return CLI::ExistingFile(path);
+        });
 
-    normalizeCommand->add_option("output", outputPath, "Output file path")
+    normalizeCommand->add_option("output", outputPath, "Output file path (use - for stdout)")
         ->required();
 
     // Add normalize-specific options
@@ -71,6 +167,20 @@ void OptionsParser::setupNormalizeCommand() {
     normalizeCommand->add_option("--threads", normalizeOptions.threads,
                                "Number of threads (0 = auto)");
 
+    // Add sample option
+    normalizeCommand->add_option("--sample", sampleSize,
+                               "Sample N lines randomly from input")
+        ->check(CLI::PositiveNumber);
+
+    // Add line length filter options
+    normalizeCommand->add_option("--min-length", normalizeOptions.minLength,
+                               "Minimum line length (0 = no minimum)")
+        ->check(CLI::NonNegativeNumber);
+
+    normalizeCommand->add_option("--max-length", normalizeOptions.maxLength,
+                               "Maximum line length (0 = no maximum)")
+        ->check(CLI::NonNegativeNumber);
+
     // Store progress format as an enum directly
     normalizeProgressFormat = ProgressFormat::TTY; // Default value
     std::vector<std::pair<std::string, ProgressFormat>> progress_map = {
@@ -87,10 +197,10 @@ void OptionsParser::setupNormalizeCommand() {
         // Set progress callback based on format
         switch (normalizeProgressFormat) {
             case ProgressFormat::TTY:
-                normalizeOptions.progressCallback = ttyProgressCallback;
+                normalizeOptions.progressCallback = ttyProgressCallbackWithEta;
                 break;
             case ProgressFormat::JSON:
-                normalizeOptions.progressCallback = jsonProgressCallback;
+                normalizeOptions.progressCallback = jsonProgressCallbackWithEta;
                 break;
             case ProgressFormat::NONE:
                 normalizeOptions.progressCallback = nullptr;
@@ -104,11 +214,16 @@ void OptionsParser::setupPmiCommand() {
     pmiCommand = app.add_subcommand("pmi", "Calculate PMI (Pointwise Mutual Information)");
 
     // Add input/output options
-    pmiCommand->add_option("input", inputPath, "Input file path")
+    pmiCommand->add_option("input", inputPath, "Input file path (use - for stdin)")
         ->required()
-        ->check(CLI::ExistingFile);
+        ->check([](const std::string& path) {
+            // Allow "-" for stdin
+            if (path == "-") return std::string();
+            // Otherwise check if file exists
+            return CLI::ExistingFile(path);
+        });
 
-    pmiCommand->add_option("output", outputPath, "Output file path")
+    pmiCommand->add_option("output", outputPath, "Output file path (use - for stdout)")
         ->required();
 
     // Add PMI-specific options
@@ -139,10 +254,10 @@ void OptionsParser::setupPmiCommand() {
         // Set progress callback based on format
         switch (pmiProgressFormat) {
             case ProgressFormat::TTY:
-                pmiOptions.progressCallback = ttyProgressCallback;
+                pmiOptions.progressCallback = ttyProgressCallbackWithEta;
                 break;
             case ProgressFormat::JSON:
-                pmiOptions.progressCallback = jsonProgressCallback;
+                pmiOptions.progressCallback = jsonProgressCallbackWithEta;
                 break;
             case ProgressFormat::NONE:
                 pmiOptions.progressCallback = nullptr;
@@ -245,10 +360,10 @@ void OptionsParser::setupWordExtractCommand() {
         // Set progress callback based on format
         switch (wordExtractProgressFormat) {
             case ProgressFormat::TTY:
-                wordExtractionOptions.progressCallback = ttyProgressCallback;
+                wordExtractionOptions.progressCallback = ttyProgressCallbackWithEta;
                 break;
             case ProgressFormat::JSON:
-                wordExtractionOptions.progressCallback = jsonProgressCallback;
+                wordExtractionOptions.progressCallback = jsonProgressCallbackWithEta;
                 break;
             case ProgressFormat::NONE:
                 wordExtractionOptions.progressCallback = nullptr;
@@ -258,6 +373,10 @@ void OptionsParser::setupWordExtractCommand() {
 }
 
 void OptionsParser::setupGlobalOptions() {
+    // Set custom exit callback to handle help properly
+    app.set_help_flag("-h,--help", "Print this help message and exit");
+    app.set_help_all_flag("--help-all", "Print help message for all subcommands");
+
     // Add version flag
     app.add_flag_callback("-v,--version", []() {
         std::cout << "suzume-feedmill " << getVersion() << std::endl;
@@ -274,14 +393,31 @@ void OptionsParser::setupGlobalOptions() {
         wordExtractProgressFormat = ProgressFormat::NONE;
     }, "Suppress all output (same as --progress none)");
 
-    // Require a subcommand
-    app.require_subcommand(1, 1);
+    // Add stats-json flag to each subcommand instead of as a global option
+    // This ensures the option is recognized by each subcommand
+    normalizeCommand->add_flag("--stats-json", statsJson, "Output statistics as JSON to stdout");
+    pmiCommand->add_flag("--stats-json", statsJson, "Output statistics as JSON to stdout");
+    wordExtractCommand->add_flag("--stats-json", statsJson, "Output statistics as JSON to stdout");
+
+    // Also add it as a global option for help display
+    app.add_flag("--stats-json", statsJson, "Output statistics as JSON to stdout");
+
+    // Allow 0 or 1 subcommand (0 for help/version, 1 for normal operation)
+    app.require_subcommand(0, 1);
 }
 
 int OptionsParser::parse(int argc, char* argv[]) {
     try {
         app.parse(argc, argv);
         return 0;
+    } catch (const CLI::CallForHelp &e) {
+        // Help was requested, display help and exit with success code
+        app.exit(e);
+        exit(0); // Exit immediately with success code
+    } catch (const CLI::CallForAllHelp &e) {
+        // Help-all was requested, display help and exit with success code
+        app.exit(e);
+        exit(0); // Exit immediately with success code
     } catch (const CLI::ParseError &e) {
         return app.exit(e);
     }
@@ -297,6 +433,10 @@ const std::string& OptionsParser::getOutputPath() const {
 
 const suzume::NormalizeOptions& OptionsParser::getNormalizeOptions() const {
     return normalizeOptions;
+}
+
+size_t OptionsParser::getSampleSize() const {
+    return sampleSize;
 }
 
 const suzume::PmiOptions& OptionsParser::getPmiOptions() const {
@@ -321,6 +461,10 @@ const suzume::WordExtractionOptions& OptionsParser::getWordExtractionOptions() c
 
 bool OptionsParser::isWordExtractCommand() const {
     return wordExtractCommand && wordExtractCommand->parsed();
+}
+
+bool OptionsParser::isStatsJsonEnabled() const {
+    return statsJson;
 }
 
 const std::string& OptionsParser::getOriginalTextPath() const {

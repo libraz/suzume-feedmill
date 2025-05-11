@@ -40,7 +40,16 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libicu-dev
+          sudo apt-get install -y build-essential cmake libicu-dev libgtest-dev libgmock-dev
+
+          # Build and install GTest/GMock from source if needed
+          if [ ! -f /usr/lib/libgmock.a ] && [ ! -f /usr/lib/x86_64-linux-gnu/libgmock.a ]; then
+            echo "Building GTest/GMock from source"
+            cd /usr/src/googletest
+            sudo cmake .
+            sudo cmake --build . --parallel
+            sudo cmake --install .
+          fi
 
       - name: Install dependencies (macOS)
         if: matrix.os == 'macos-latest'
@@ -132,21 +141,34 @@ jobs:
       - name: Setup Emscripten
         uses: mymindstorm/setup-emsdk@v12
         with:
-          version: latest
-          actions-cache-folder: "emsdk-cache"
+          version: "3.1.45" # Specify a fixed version for stability
+          no-cache: true # Completely disable caching
+          no-install: false # Force fresh installation
 
-      # Verify Emscripten installation
-      - name: Verify Emscripten
+      # Verify and setup Emscripten environment
+      - name: Verify and setup Emscripten
         run: |
+          source "$EMSDK/emsdk_env.sh"
           emcc --version
+          echo "EMSCRIPTEN_ROOT=$EMSCRIPTEN_ROOT" >> $GITHUB_ENV
 
       # Build WebAssembly module
       - name: Build WebAssembly module
         run: |
+          source "$EMSDK/emsdk_env.sh"
           mkdir -p build-wasm
           cd build-wasm
           emcmake cmake .. -DBUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
           emmake make -j$(nproc)
+
+          # Check if build was successful
+          if [ -f "suzume-feedmill.js" ] && [ -f "suzume-feedmill.wasm" ]; then
+            echo "WebAssembly build successful"
+          else
+            echo "WebAssembly build failed: output files not found"
+            find . -name "*.js" -o -name "*.wasm"
+            exit 1
+          fi
 
       # Verify WebAssembly module
       - name: Verify WebAssembly module
@@ -161,14 +183,53 @@ jobs:
       - name: Prepare for testing
         run: |
           mkdir -p wasm
-          cp build-wasm/suzume-feedmill.js wasm/
-          cp build-wasm/suzume-feedmill.wasm wasm/
+          # Find and copy WebAssembly files (they might be in the root or in a subdirectory)
+          find build-wasm -name "suzume-feedmill.js" -exec cp {} wasm/ \;
+          find build-wasm -name "suzume-feedmill.wasm" -exec cp {} wasm/ \;
+
+          # Verify files were copied
+          if [ -f "wasm/suzume-feedmill.js" ] && [ -f "wasm/suzume-feedmill.wasm" ]; then
+            echo "WebAssembly files copied successfully"
+          else
+            echo "Failed to copy WebAssembly files"
+            ls -la build-wasm/
+            ls -la wasm/
+            exit 1
+          fi
 
       # Test WebAssembly module
       - name: Test WebAssembly module
         run: |
-          chmod +x scripts/test-wasm.js
-          node scripts/test-wasm.js
+          source "$EMSDK/emsdk_env.sh"
+
+          # Debug: List files in scripts directory
+          echo "Files in scripts directory:"
+          ls -la scripts/
+
+          # Check if test-wasm.js exists before chmod
+          if [ -f "scripts/test-wasm.js" ]; then
+            chmod +x scripts/test-wasm.js
+
+            # List files in wasm directory
+            echo "Files in wasm directory:"
+            ls -la wasm/
+
+            # Set environment variables for test execution
+            NODE_PATH=$PWD node scripts/test-wasm.js
+
+            # Check test result
+            if [ $? -ne 0 ]; then
+              echo "WebAssembly tests failed"
+              exit 1
+            else
+              echo "WebAssembly tests passed"
+            fi
+          else
+            echo "Error: scripts/test-wasm.js not found"
+            # Try to find the file
+            find . -name "test-wasm.js"
+            exit 1
+          fi
 
       # Upload WebAssembly artifacts
       - name: Upload WebAssembly artifacts

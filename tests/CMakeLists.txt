@@ -34,6 +34,7 @@ if(GTEST_FOUND)
 
     # IO layer tests
     io/file_io_test.cpp
+    io/stdin_stdout_test.cpp
 
     # Parallel layer tests
     parallel/executor_test.cpp
@@ -123,12 +124,14 @@ else()
 
     # IO layer tests
     io/file_io_test.cpp
+    io/stdin_stdout_test.cpp
 
     # Parallel layer tests
     parallel/executor_test.cpp
 
     # CLI layer tests
     cli/options_test.cpp
+    # Removed stats_json_test.cpp, main_test.cpp and main_impl_mock.cpp as they are no longer needed
     ${CMAKE_SOURCE_DIR}/src/cli/options.cpp
 
     # Main test file
@@ -145,6 +148,14 @@ else()
     CLI11::CLI11 # CLI11 library for command-line parsing
     gtest
     gtest_main
+    gmock
+    gmock_main
+  )
+
+  # Add GoogleMock include directories
+  target_include_directories(suzume_feedmill_test PRIVATE
+    ${googletest_SOURCE_DIR}/googlemock/include
+    ${googletest_SOURCE_DIR}/googletest/include
   )
 
   # Add pthread only on non-Windows platforms

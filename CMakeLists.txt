@@ -16,6 +16,9 @@ option(STATIC "Build with static libraries" OFF)
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
 option(BUILD_WASM "Build WebAssembly module" OFF) # WASM build option
 
+# Enable testing at the top level
+enable_testing()
+
 # Sanitizer options
 option(ENABLE_SANITIZER "Enable sanitizers" OFF)
 option(ENABLE_ASAN "Enable AddressSanitizer" OFF)
@@ -332,6 +335,16 @@ if(NOT EMSCRIPTEN)
   )
 endif()
 
+# nlohmann/json (header-only library for JSON processing)
+# Use single header version instead of full repository to avoid CMake version issues
+FetchContent_Declare(
+  nlohmann_json
+  QUIET
+  URL https://github.com/nlohmann/json/releases/download/v3.11.2/json.hpp
+  DOWNLOAD_NO_EXTRACT TRUE
+  DOWNLOAD_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build/_deps/nlohmann_json-src/include/nlohmann
+)
+
 # Using ICU for Unicode processing
 message(STATUS "Using ICU for Unicode processing")
 
@@ -340,6 +353,12 @@ if(NOT EMSCRIPTEN)
   FetchContent_MakeAvailable(xxHash robin_hood cli11)
 else()
   FetchContent_MakeAvailable(xxHash robin_hood)
+endif()
+
+# Handle nlohmann_json manually since we're using the single header
+FetchContent_GetProperties(nlohmann_json)
+if(NOT nlohmann_json_POPULATED)
+  FetchContent_Populate(nlohmann_json)
 endif()
 
 # Add include directories for third-party libraries and ICU
@@ -352,6 +371,7 @@ include_directories(
   ${CMAKE_BINARY_DIR}/_deps/xxhash-src
   ${CMAKE_BINARY_DIR}/_deps/robin_hood-src
   ${CMAKE_CURRENT_SOURCE_DIR}/src/third_party
+  ${CMAKE_CURRENT_SOURCE_DIR}/build/_deps/nlohmann_json-src/include
 )
 
 # Copy xxhash.h to a location in the include path
@@ -379,8 +399,8 @@ target_link_libraries(suzume_feedmill_core INTERFACE suzume_core)
 # WebAssembly specific target
 if(EMSCRIPTEN)
   # Create WASM module
-  add_executable(suzume_wasm src/wasm/wasm_main.cpp)
-  target_link_libraries(suzume_wasm PRIVATE suzume_core suzume_wasm_lib)
+  add_executable(suzume_wasm src/wasm/wasm_main.cpp src/wasm/wasm_exports.cpp)
+  target_link_libraries(suzume_wasm PRIVATE suzume_core)
 
   # Set output name and properties
   set_target_properties(suzume_wasm PROPERTIES

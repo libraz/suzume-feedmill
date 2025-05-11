@@ -59,8 +59,9 @@ PmiResult calculatePmiWithStructuredProgress(
         info.overallRatio = 0.0;
         progressCallback(info);
 
-        // Check if input file exists
-        if (!std::filesystem::exists(inputPath)) {
+        // Check if input is stdin or if file exists
+        bool isStdin = (inputPath == "-");
+        if (!isStdin && !std::filesystem::exists(inputPath)) {
             throw std::runtime_error("Input file does not exist: " + inputPath);
         }
 
@@ -92,28 +93,48 @@ PmiResult calculatePmiWithStructuredProgress(
                       << "  threads: " << numThreads << std::endl;
         }
 
-        // Read the entire input file
+        // Read the entire input from stdin or file
         std::string text;
         size_t fileSize = 0;
-
-        try {
-            fileSize = std::filesystem::file_size(inputPath);
-            text.reserve(fileSize);
-        } catch (const std::exception& e) {
-            // Continue without reserving space
-        }
-
-        // Open input file
-        std::ifstream inputFile(inputPath, std::ios::binary);
-        if (!inputFile) {
-            throw std::runtime_error("Failed to open input file: " + inputPath);
-        }
-
-        // Read file content
-        std::string line;
         size_t bytesRead = 0;
+        std::string line;
 
-        while (std::getline(inputFile, line)) {
+        if (isStdin) {
+            // Read from stdin
+            while (std::getline(std::cin, line)) {
+                text += line;
+                text += '\n';
+
+                bytesRead += line.size() + 1; // +1 for newline
+
+                // Update progress for reading phase (less frequently for stdin)
+                if (text.size() % 10000 == 0) {
+                    // Update progress info
+                    info.phase = ProgressInfo::Phase::Reading;
+                    info.phaseRatio = 0.5; // Assume we're halfway through for stdin
+                    info.overallRatio = 0.15; // Reading is about 30% of total work
+
+                    progressCallback(info);
+                    lastReportedProgress.store(info.overallRatio);
+                }
+            }
+        } else {
+            // Get file size for progress reporting
+            try {
+                fileSize = std::filesystem::file_size(inputPath);
+                text.reserve(fileSize);
+            } catch (const std::exception& e) {
+                // Continue without reserving space
+            }
+
+            // Open input file
+            std::ifstream inputFile(inputPath, std::ios::binary);
+            if (!inputFile) {
+                throw std::runtime_error("Failed to open input file: " + inputPath);
+            }
+
+            // Read file content
+            while (std::getline(inputFile, line)) {
             text += line;
             text += '\n';
 
@@ -135,6 +156,7 @@ PmiResult calculatePmiWithStructuredProgress(
                     progressCallback(info);
                     lastReportedProgress.store(info.overallRatio);
                 }
+            }
             }
         }
 
@@ -255,20 +277,64 @@ PmiResult calculatePmiWithStructuredProgress(
         progressCallback(info);
         lastReportedProgress.store(info.overallRatio);
 
-        // Check if output is null (special case for no output)
+        // Check if output is null (special case for no output) or stdout
+        bool isStdout = (outputPath == "-");
+
         if (outputPath != "null") {
-            // Open output file
-            std::ofstream outputFile(outputPath, std::ios::binary);
-            if (!outputFile) {
-                throw std::runtime_error("Failed to open output file: " + outputPath);
-            }
+            if (isStdout) {
+                // Write to stdout
+                // Write header
+                std::cout << "ngram\tpmi\tfrequency\n";
 
-            // Write header
-            outputFile << "ngram\tpmi\tfrequency\n";
+                // Write results
+                for (const auto& item : pmiScores) {
+                    std::cout << item.ngram << "\t" << item.score << "\t" << item.frequency << "\n";
+                }
+                std::cout.flush();
+            } else {
+                // Create directory if it doesn't exist
+                std::filesystem::path filePath(outputPath);
 
-            // Write results
-            for (const auto& item : pmiScores) {
-                outputFile << item.ngram << "\t" << item.score << "\t" << item.frequency << "\n";
+                try {
+                    // Check if the path exists and is a directory
+                    if (std::filesystem::exists(outputPath) && std::filesystem::is_directory(outputPath)) {
+                        throw std::runtime_error("Cannot write to '" + outputPath + "' because it is a directory");
+                    }
+
+                    // Check if the parent path exists or can be created
+                    if (!filePath.parent_path().empty()) {
+                        std::filesystem::create_directories(filePath.parent_path());
+                    }
+                } catch (const std::filesystem::filesystem_error& e) {
+                    // Handle filesystem errors
+                    throw std::runtime_error("Failed to create directory for output file: " +
+                                            std::string(e.what()));
+                }
+
+                // Open output file
+                std::ofstream outputFile(outputPath, std::ios::binary);
+                if (!outputFile) {
+                    // Provide more detailed error message based on errno
+                    std::string errorMsg;
+                    if (errno == EACCES || errno == EPERM) {
+                        errorMsg = "Permission denied: Cannot write to " + outputPath;
+                    } else if (errno == ENOENT) {
+                        errorMsg = "Directory does not exist: " + outputPath;
+                    } else if (errno == EISDIR) {
+                        errorMsg = "Cannot write to '" + outputPath + "' because it is a directory";
+                    } else {
+                        errorMsg = "Failed to open output file: " + outputPath;
+                    }
+                    throw std::runtime_error(errorMsg);
+                }
+
+                // Write header
+                outputFile << "ngram\tpmi\tfrequency\n";
+
+                // Write results
+                for (const auto& item : pmiScores) {
+                    outputFile << item.ngram << "\t" << item.score << "\t" << item.frequency << "\n";
+                }
             }
         }
 

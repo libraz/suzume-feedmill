@@ -6,17 +6,23 @@
 #include "core/text_utils.h"
 #include <algorithm>
 #include <iostream>
+#include <fstream>
+#include <filesystem>
 #include <mutex>
 #include <sstream>
 #include <unordered_set>
 #include <vector>
 #include <cstring>
+#include <cerrno>
+#include <random>
 #include <unicode/uchar.h>
 #include <unicode/unistr.h>
 #include <unicode/normalizer2.h>
 #include <unicode/uniset.h>
+#ifndef EMSCRIPTEN
 #include <unicode/ustream.h>
 #include <unicode/ustdio.h>
+#endif
 #include <unicode/uclean.h>
 #include "xxhash.h"
 
@@ -216,6 +222,48 @@ namespace {
 
     // Unicode normalization implementation
     std::string normalizeText(const std::string& text, suzume::NormalizationForm form) {
+#ifdef EMSCRIPTEN
+        // Simplified implementation for WebAssembly
+        if (text.empty()) {
+            return text;
+        }
+
+        try {
+            // Convert to ICU UnicodeString
+            UnicodeString ustr = UnicodeString::fromUTF8(text);
+            if (ustr.isBogus()) {
+                return text; // Return original text if invalid UTF-8
+            }
+
+            // Get the appropriate normalizer
+            UErrorCode status = U_ZERO_ERROR;
+            const Normalizer2* normalizer = nullptr;
+
+            if (form == suzume::NormalizationForm::NFKC) {
+                normalizer = Normalizer2::getNFKCInstance(status);
+            } else if (form == suzume::NormalizationForm::NFC) {
+                normalizer = Normalizer2::getNFCInstance(status);
+            }
+
+            if (U_FAILURE(status) || normalizer == nullptr) {
+                return text;
+            }
+
+            // Perform normalization
+            UnicodeString normalized = normalizer->normalize(ustr, status);
+            if (U_FAILURE(status)) {
+                return text;
+            }
+
+            // Convert back to UTF-8
+            std::string result;
+            normalized.toUTF8String(result);
+            return result;
+        } catch (...) {
+            return text;
+        }
+#else
+        // Full implementation for native platforms
         if (text.empty()) {
             return text;
         }
@@ -263,6 +311,7 @@ namespace {
             std::cerr << "Unknown error in normalizeText" << std::endl;
             return text;
         }
+#endif
     }
 
     // Convert text to lowercase
@@ -315,22 +364,12 @@ std::string normalizeLine(const std::string& line, suzume::NormalizationForm for
         // 2. Exclude lines with length ≤1 (count Unicode code points, not bytes)
         UnicodeString ustr = UnicodeString::fromUTF8(line);
 
-        // Special handling for test cases with single characters
+        // Skip empty or single-character lines
         if (ustr.countChar32() <= 1) {
-            // For test cases with specific single characters, apply normalization
-            if (line == "ﬁ" && form == suzume::NormalizationForm::NFKC) {
-                return "fi"; // Latin ligature fi -> "fi" in NFKC mode
-            } else if (line == "à") {
-                return line; // Preserve combining characters for test
-            } else {
-                return ""; // Skip other empty or single-character lines
-            }
+            return ""; // Skip empty or single-character lines
         }
 
-        // 3. Exclude lines starting with #
-        if (line[0] == '#') {
-            return ""; // Skip comment lines
-        }
+        // Comment exclusion removed to handle hashtags properly
 
         // 4. Exclude emoji-only lines
         if (line.find('\t') == std::string::npos) {
@@ -396,7 +435,7 @@ std::string normalizeLine(const std::string& line, suzume::NormalizationForm for
     }
 }
 
-bool shouldExcludeLine(const std::string& line) {
+bool shouldExcludeLine(const std::string& line, uint32_t minLength, uint32_t maxLength) {
     // Skip empty lines
     if (line.empty()) {
         return true;
@@ -407,10 +446,7 @@ bool shouldExcludeLine(const std::string& line) {
         return true;
     }
 
-    // Skip comment lines
-    if (line[0] == '#') {
-        return true;
-    }
+    // Comment exclusion removed to handle hashtags properly
 
     // Check for emoji-only lines
     if (line.find('\t') == std::string::npos) {
@@ -422,7 +458,21 @@ bool shouldExcludeLine(const std::string& line) {
         }
     }
 
+    // Apply min/max length filters if specified
+    if (minLength > 0 && line.length() < minLength) {
+        return true;
+    }
+
+    if (maxLength > 0 && line.length() > maxLength) {
+        return true;
+    }
+
     return false;
+}
+
+// Backward compatibility wrapper
+bool shouldExcludeLine(const std::string& line) {
+    return shouldExcludeLine(line, 0, 0);
 }
 
 std::vector<std::string> generateNgrams(const std::string& text, int n) {
@@ -501,6 +551,147 @@ bool isDuplicate(const std::string& str,
     // Not a duplicate, add to set
     uniqueSet.insert(str);
     return false;
+}
+
+std::vector<std::string> sampleLines(
+    const std::string& inputPath,
+    size_t sampleSize,
+    unsigned int seed
+) {
+    // Initialize result vector
+    std::vector<std::string> result;
+
+    // Check if sample size is valid
+    if (sampleSize == 0) {
+        return result;
+    }
+
+    // Check if file exists before attempting to open
+    if (!std::filesystem::exists(inputPath)) {
+        throw std::runtime_error("File does not exist: " + inputPath);
+    }
+
+    try {
+        // Initialize random number generator
+        std::mt19937 gen;
+        if (seed == 0) {
+            // Use time-based seed if not specified
+            std::random_device rd;
+            gen.seed(rd());
+        } else {
+            gen.seed(seed);
+        }
+
+        // Open input file
+        std::ifstream file(inputPath);
+        if (!file.is_open()) {
+            // Provide more detailed error message based on errno
+            std::string errorMsg;
+            if (errno == EACCES || errno == EPERM) {
+                errorMsg = "Permission denied: Cannot read " + inputPath;
+            } else if (errno == ENOENT) {
+                errorMsg = "File does not exist: " + inputPath;
+            } else {
+                errorMsg = "Failed to open file: " + inputPath + " (errno: " + std::to_string(errno) + ")";
+            }
+            throw std::runtime_error(errorMsg);
+        }
+
+        // Read lines using Reservoir sampling algorithm
+        std::string line;
+        size_t lineCount = 0;
+
+        // Fill the reservoir with the first sampleSize lines
+        while (lineCount < sampleSize && std::getline(file, line)) {
+            result.push_back(line);
+            lineCount++;
+        }
+
+        // Process the rest of the lines using Reservoir sampling
+        while (std::getline(file, line)) {
+            lineCount++;
+
+            // Generate a random index in [0, lineCount)
+            std::uniform_int_distribution<size_t> dist(0, lineCount - 1);
+            size_t j = dist(gen);
+
+            // Replace element at index j with probability sampleSize/lineCount
+            if (j < sampleSize) {
+                result[j] = line;
+            }
+        }
+
+        return result;
+    } catch (const std::exception& e) {
+        std::cerr << "Error in sampleLines: " << e.what() << std::endl;
+        return result;
+    } catch (...) {
+        std::cerr << "Unknown error in sampleLines" << std::endl;
+        return result;
+    }
+}
+
+// Overload for sampling from a vector of strings
+std::vector<std::string> sampleLines(
+    const std::vector<std::string>& lines,
+    size_t sampleSize,
+    unsigned int seed
+) {
+    // Initialize result vector
+    std::vector<std::string> result;
+
+    // Check if sample size is valid
+    if (sampleSize == 0) {
+        return result;
+    }
+
+    // Check if there are enough lines
+    if (lines.empty()) {
+        return result;
+    }
+
+    try {
+        // Initialize random number generator
+        std::mt19937 gen;
+        if (seed == 0) {
+            // Use time-based seed if not specified
+            std::random_device rd;
+            gen.seed(rd());
+        } else {
+            gen.seed(seed);
+        }
+
+        // Use Reservoir sampling algorithm
+        size_t lineCount = lines.size();
+
+        // If sample size is greater than or equal to the number of lines, return all lines
+        if (sampleSize >= lineCount) {
+            return lines;
+        }
+
+        // Fill the reservoir with the first sampleSize lines
+        result.assign(lines.begin(), lines.begin() + sampleSize);
+
+        // Process the rest of the lines using Reservoir sampling
+        for (size_t i = sampleSize; i < lineCount; i++) {
+            // Generate a random index in [0, i)
+            std::uniform_int_distribution<size_t> dist(0, i);
+            size_t j = dist(gen);
+
+            // Replace element at index j with probability sampleSize/i
+            if (j < sampleSize) {
+                result[j] = lines[i];
+            }
+        }
+
+        return result;
+    } catch (const std::exception& e) {
+        std::cerr << "Error in sampleLines: " << e.what() << std::endl;
+        return result;
+    } catch (...) {
+        std::cerr << "Unknown error in sampleLines" << std::endl;
+        return result;
+    }
 }
 
 } // namespace core

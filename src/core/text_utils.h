@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include <unordered_set>
+#include <random>
 #include "suzume_feedmill.h"
 
 namespace suzume {
@@ -30,6 +31,16 @@ std::string normalizeLine(const std::string& line, NormalizationForm form);
  * @return bool True if line should be excluded
  */
 bool shouldExcludeLine(const std::string& line);
+
+/**
+ * @brief Check if a line should be excluded with length filters
+ *
+ * @param line Input line
+ * @param minLength Minimum line length (0 = no minimum)
+ * @param maxLength Maximum line length (0 = no maximum)
+ * @return bool True if line should be excluded
+ */
+bool shouldExcludeLine(const std::string& line, uint32_t minLength, uint32_t maxLength);
 
 /**
  * @brief Generate n-grams from text
@@ -59,6 +70,34 @@ uint64_t calculateHash(const std::string& str);
 bool isDuplicate(const std::string& str,
                 std::unordered_set<std::string>& uniqueSet,
                 double bloomFalsePositiveRate);
+
+/**
+ * @brief Sample N lines from a file using Reservoir sampling
+ *
+ * @param inputPath Path to input file
+ * @param sampleSize Number of lines to sample
+ * @param seed Random seed (0 for time-based seed)
+ * @return std::vector<std::string> Sampled lines
+ */
+std::vector<std::string> sampleLines(
+    const std::string& inputPath,
+    size_t sampleSize,
+    unsigned int seed = 0
+);
+
+/**
+ * @brief Sample N lines from a vector of strings using Reservoir sampling
+ *
+ * @param lines Vector of input lines
+ * @param sampleSize Number of lines to sample
+ * @param seed Random seed (0 for time-based seed)
+ * @return std::vector<std::string> Sampled lines
+ */
+std::vector<std::string> sampleLines(
+    const std::vector<std::string>& lines,
+    size_t sampleSize,
+    unsigned int seed = 0
+);
 
 } // namespace core
 } // namespace suzume
