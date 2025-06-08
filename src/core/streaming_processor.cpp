@@ -83,7 +83,8 @@ size_t StreamingLineProcessor::processFile(
     }
     
     auto endTime = std::chrono::high_resolution_clock::now();
-    processingTimeMs_ = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+    auto durationUs = std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime).count();
+    processingTimeMs_ = std::max(static_cast<size_t>(1), static_cast<size_t>(durationUs / 1000)); // Convert to ms, minimum 1ms
     
     if (progressCallback) {
         progressCallback(1.0);
