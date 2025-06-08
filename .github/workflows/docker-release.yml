@@ -1,0 +1,122 @@
+name: Docker Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker tag to build and push'
+        required: true
+        default: 'latest'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  docker-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        variant:
+          - dockerfile: Dockerfile
+            suffix: ""
+            platforms: linux/amd64,linux/arm64
+            description: "Alpine-based (default)"
+          - dockerfile: Dockerfile.ubuntu
+            suffix: "-ubuntu"
+            platforms: linux/amd64,linux/arm64
+            description: "Ubuntu-based"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Setup Docker Buildx for multi-platform builds
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Login to GitHub Container Registry
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract metadata for Docker
+      - name: Extract metadata (${{ matrix.variant.description }})
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=${{ matrix.variant.suffix }}
+            type=ref,event=pr,suffix=${{ matrix.variant.suffix }}
+            type=semver,pattern={{version}},suffix=${{ matrix.variant.suffix }}
+            type=semver,pattern={{major}}.{{minor}},suffix=${{ matrix.variant.suffix }}
+            type=semver,pattern={{major}},suffix=${{ matrix.variant.suffix }}
+            type=raw,value=latest${{ matrix.variant.suffix }},enable={{is_default_branch}}
+            type=raw,value=${{ github.event.inputs.tag }}${{ matrix.variant.suffix }},enable=${{ github.event_name == 'workflow_dispatch' }}
+
+      # Build and push Docker image
+      - name: Build and push Docker image (${{ matrix.variant.description }})
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ matrix.variant.dockerfile }}
+          platforms: ${{ matrix.variant.platforms }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Test the pushed image
+      - name: Test Docker image (${{ matrix.variant.description }})
+        run: |
+          # Extract the first tag from metadata
+          TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "Testing image: $TAG"
+          
+          # Pull and test the image
+          docker pull "$TAG"
+          
+          # Test help command
+          docker run --rm "$TAG" --help
+          
+          # Test version command
+          docker run --rm "$TAG" --version
+
+      # Create image summary
+      - name: Image summary (${{ matrix.variant.description }})
+        run: |
+          echo "## Docker Image Release Summary - ${{ matrix.variant.description }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Registry:** ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Variant:** ${{ matrix.variant.description }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dockerfile:** ${{ matrix.variant.dockerfile }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Platforms:** ${{ matrix.variant.platforms }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "**Pull command:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker pull $TAG" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Usage:**" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker run --rm -v \$(pwd):/data $TAG normalize /data/input.tsv /data/output.tsv" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

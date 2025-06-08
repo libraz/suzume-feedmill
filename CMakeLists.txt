@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.15)
 # Set CMake policy to suppress deprecation warnings from dependencies
 cmake_policy(SET CMP0048 NEW)
 cmake_policy(SET CMP0077 NEW)
-project(suzume_feedmill VERSION 0.2.0 LANGUAGES CXX C)
+project(suzume_feedmill VERSION 1.0.0 LANGUAGES CXX C)
 
 # Use C++17 standard
 set(CMAKE_CXX_STANDARD 17)
@@ -160,6 +160,16 @@ include_directories(
   ${SOURCE_DIR}
 )
 
+# Generate version header
+configure_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/cli/version.h.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/src/cli/version.h"
+  @ONLY
+)
+
+# Add generated files to include path
+include_directories("${CMAKE_CURRENT_BINARY_DIR}")
+
 # Third-party libraries using FetchContent
 include(FetchContent)
 
@@ -168,6 +178,15 @@ if(NOT EMSCRIPTEN)
   find_package(PkgConfig QUIET)
   if(PkgConfig_FOUND)
     pkg_check_modules(ICU REQUIRED icu-uc icu-io)
+    if(ICU_FOUND)
+      # Set the variables for compatibility - pkg-config sets ICU_LIBRARIES correctly
+      # Also set ICU_INCLUDE_DIRS (usually set by pkg-config as well)
+      set(ICU_INCLUDE_DIRS ${ICU_INCLUDE_DIRS})
+      set(ICU_LIBRARIES ${ICU_LIBRARIES})
+      message(STATUS "Found ICU via pkg-config")
+      message(STATUS "  Include dirs: ${ICU_INCLUDE_DIRS}")
+      message(STATUS "  Libraries: ${ICU_LIBRARIES}")
+    endif()
   else()
     # Fallback to manual detection
     if(WIN32)
@@ -279,8 +298,20 @@ if(NOT EMSCRIPTEN)
     set(ICU_LIBRARIES ${ICU_UC_LIBRARY} ${ICU_IO_LIBRARY})
   endif()
 
-  if(NOT ICU_INCLUDE_DIRS OR NOT ICU_LIBRARIES)
+  # For pkg-config based detection, ICU_INCLUDE_DIRS might be empty if headers are in standard locations
+  if(NOT ICU_LIBRARIES)
     message(FATAL_ERROR "ICU libraries not found. Please install ICU.")
+  endif()
+  
+  # If ICU_INCLUDE_DIRS is empty but we have libraries, try to find headers in standard locations
+  if(NOT ICU_INCLUDE_DIRS AND ICU_LIBRARIES)
+    find_path(ICU_INCLUDE_DIRS unicode/uchar.h
+      PATHS /usr/include /usr/local/include
+      NO_DEFAULT_PATH
+    )
+    if(ICU_INCLUDE_DIRS)
+      message(STATUS "Found ICU headers in standard location: ${ICU_INCLUDE_DIRS}")
+    endif()
   endif()
 
   message(STATUS "Found ICU: ${ICU_LIBRARIES}")

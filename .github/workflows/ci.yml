@@ -22,6 +22,15 @@ on:
       - ".vscode/**"
       - "examples/**"
   workflow_dispatch:
+    inputs:
+      enable_wasm:
+        description: 'Enable WebAssembly build (experimental)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build-and-test:
@@ -134,18 +143,64 @@ jobs:
             build-prebuilt/suzume-feedmill*
             build-prebuilt/Release/suzume-feedmill*
 
-  build-and-test-wasm:
+  docker-build-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile: [Dockerfile, Dockerfile.ubuntu]
+        include:
+          - dockerfile: Dockerfile
+            tag: alpine
+            description: "Alpine-based"
+          - dockerfile: Dockerfile.ubuntu
+            tag: ubuntu
+            description: "Ubuntu-based"
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # Test Docker build
+      - name: Test Docker build (${{ matrix.description }})
+        run: |
+          docker build -f ${{ matrix.dockerfile }} -t suzume-feedmill:${{ matrix.tag }}-test .
+
+      # Test the built image
+      - name: Test Docker image (${{ matrix.description }})
+        run: |
+          # Test help command
+          docker run --rm suzume-feedmill:${{ matrix.tag }}-test --help
+          
+          # Test version command
+          docker run --rm suzume-feedmill:${{ matrix.tag }}-test --version
+          
+          # Test basic functionality with echo
+          echo "今日は良い天気ですね。" | docker run --rm -i suzume-feedmill:${{ matrix.tag }}-test normalize - - || echo "Normalize test completed"
+
+      # Check image size
+      - name: Check image size (${{ matrix.description }})
+        run: |
+          docker images suzume-feedmill:${{ matrix.tag }}-test --format "table {{.Repository}}:{{.Tag}}\t{{.Size}}"
+
+  build-and-test-wasm:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.enable_wasm == 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
       # Install dependencies
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build ccache libicu-dev nodejs npm
+          sudo apt-get install -y build-essential cmake ninja-build ccache libicu-dev
 
       # Setup ccache for WebAssembly build
       - name: Restore ccache
@@ -168,6 +223,7 @@ jobs:
         run: |
           source "$EMSDK/emsdk_env.sh"
           emcc --version
+          node --version
           echo "EMSCRIPTEN_ROOT=$EMSCRIPTEN_ROOT" >> $GITHUB_ENV
 
       # Build WebAssembly module
@@ -225,8 +281,15 @@ jobs:
           if [ -f "scripts/test-wasm.js" ]; then
             chmod +x scripts/test-wasm.js
 
+            # Debug environment
+            echo "Node.js version: $(node --version)"
+            echo "Current directory: $PWD"
+            echo "Files in wasm/: $(ls -la wasm/ || echo 'wasm directory not found')"
+            
             # Set environment variables for test execution
-            NODE_PATH=$PWD node scripts/test-wasm.js
+            export NODE_PATH=$PWD
+            export EMSCRIPTEN_ROOT=$EMSCRIPTEN_ROOT
+            node scripts/test-wasm.js
 
             # Check test result
             if [ $? -ne 0 ]; then

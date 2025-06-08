@@ -35,7 +35,7 @@ size_t StreamingLineProcessor::processFile(
     const std::string& inputPath,
     const std::string& outputPath,
     const LineProcessor& processor,
-    const ProgressCallback& progressCallback
+    const StreamingLineProcessor::ProgressCallback& progressCallback
 ) {
     auto startTime = std::chrono::high_resolution_clock::now();
     
@@ -96,7 +96,7 @@ size_t StreamingLineProcessor::processBatch(
     const std::string& inputPath,
     const std::string& outputPath,
     const BatchProcessor& processor,
-    const ProgressCallback& progressCallback
+    const StreamingLineProcessor::ProgressCallback& progressCallback
 ) {
     auto startTime = std::chrono::high_resolution_clock::now();
     
@@ -234,7 +234,7 @@ MemoryMappedProcessor::~MemoryMappedProcessor() {
 size_t MemoryMappedProcessor::processChunks(
     size_t chunkSize,
     const std::function<void(const char*, size_t)>& processor,
-    const ProgressCallback& progressCallback
+    const StreamingLineProcessor::ProgressCallback& progressCallback
 ) {
     if (!mapped_) {
         throw std::runtime_error("File is not memory mapped");

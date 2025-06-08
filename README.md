@@ -29,7 +29,7 @@ A high-performance corpus preprocessing engine for character-level n-gram and PM
 - **Cross-platform**
   - Prebuilt binaries for Linux (glibc/musl), macOS (Intel/ARM), and Windows (x64)
   - Available as a standalone CLI
-  - WebAssembly support for browser and Node.js environments
+  - **Experimental** WebAssembly support for browser and Node.js environments
 
 ## Installation
 
@@ -37,7 +37,7 @@ A high-performance corpus preprocessing engine for character-level n-gram and PM
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/suzume-feedmill.git
+git clone https://github.com/libraz/suzume-feedmill.git
 cd suzume-feedmill
 
 # Create build directory
@@ -55,7 +55,7 @@ sudo make install
 
 ### Using Prebuilt Binaries
 
-Prebuilt binaries for various platforms are available on the [Releases](https://github.com/yourusername/suzume-feedmill/releases) page.
+Prebuilt binaries for various platforms are available on the [Releases](https://github.com/libraz/suzume-feedmill/releases) page.
 
 ## Quick Start Guide
 
@@ -369,9 +369,58 @@ make
 make test
 ```
 
-## WebAssembly Support
+## Docker
+
+suzume-feedmill provides Docker support for easy deployment and cross-platform usage.
+
+### Available Docker Images
+
+Two Dockerfile variants are provided:
+
+- **Dockerfile** (Alpine-based): Optimized for size (~28MB)
+- **Dockerfile.ubuntu** (Ubuntu-based): Optimized for compatibility
+
+### Building Docker Images
+
+```bash
+# Build Alpine-based image (smallest size)
+docker build -t suzume-feedmill:alpine .
+
+# Build Ubuntu-based image (better compatibility)
+docker build -f Dockerfile.ubuntu -t suzume-feedmill:ubuntu .
+```
+
+### Using Docker Images
+
+```bash
+# Pull from GitHub Container Registry (when available)
+docker pull ghcr.io/libraz/suzume-feedmill:latest        # Alpine version
+docker pull ghcr.io/libraz/suzume-feedmill:latest-ubuntu # Ubuntu version
+
+# Run with local files
+docker run --rm -v $(pwd):/data ghcr.io/libraz/suzume-feedmill:latest \
+  normalize /data/input.tsv /data/output.tsv
+
+# Interactive shell
+docker run --rm -it -v $(pwd):/data ghcr.io/libraz/suzume-feedmill:latest sh
+```
+
+### Docker Image Variants
+
+| Image | Base | Size | Use Case |
+|-------|------|------|----------|
+| `suzume-feedmill:alpine` | Alpine Linux | ~28MB | Production, minimal footprint |
+| `suzume-feedmill:ubuntu` | Ubuntu 22.04 | ~100MB | Development, compatibility |
+
+### CI/CD Integration
+
+Docker images are automatically built and pushed to GitHub Container Registry on release tags. For manual builds or testing, use the `workflow_dispatch` event with the `enable_wasm` option for experimental WebAssembly builds.
+
+## WebAssembly Support (Experimental)
 
 suzume-feedmill can be compiled to WebAssembly (WASM) for use in web browsers or Node.js environments. This allows you to run the library directly in the browser without any server-side processing.
+
+**Note: WebAssembly support is currently experimental and may not be fully stable in all environments.**
 
 ### Building for WebAssembly
 
@@ -386,23 +435,36 @@ cd emsdk
 source ./emsdk_env.sh
 ```
 
-Then, build the WebAssembly module:
+**Option 1: Using the build script (recommended)**
+
+```bash
+# Use the build script for automated setup
+./scripts/build-wasm.sh
+```
+
+**Option 2: Manual build**
 
 ```bash
 # Create build directory
 mkdir build-wasm && cd build-wasm
 
 # Configure with Emscripten
-emcmake cmake .. -DBUILD_WASM=ON
+emcmake cmake .. -DBUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
 
 # Build
-emmake make
+emmake make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 ```
 
-This will generate the following files:
+This will generate a single file:
 
-- `suzume-feedmill.js`: JavaScript glue code
-- `suzume-feedmill.wasm`: WebAssembly binary
+- `suzume-feedmill.js`: JavaScript module with embedded WebAssembly binary (using `SINGLE_FILE=1`)
+
+**Testing the WebAssembly module:**
+
+```bash
+# Test the built module
+node scripts/test-wasm.js
+```
 
 ### Using in a Web Browser
 
@@ -518,6 +580,37 @@ For word-level analysis, you would typically:
 3. Filter the results based on frequency, length, and other criteria
 
 The examples in the `examples/` directory demonstrate both the basic usage and more advanced post-processing techniques.
+
+## Examples
+
+The project includes comprehensive examples in the `examples/` directory with multi-language support:
+
+- **C++ API examples**: Demonstrate library integration in C++ applications
+- **WebAssembly examples**: Show browser and Node.js usage
+- **Multi-language support**: Available in English (`en/`) and Japanese (`ja/`)
+
+To build and run examples:
+
+```bash
+# Build English examples (default)
+cd examples
+mkdir build && cd build
+cmake ..
+make
+
+# Build Japanese examples
+cd examples
+mkdir build-ja && cd build-ja
+cmake .. -DEXAMPLE_LANG=ja
+make
+
+# Alternative: Using Makefile
+cd examples
+make all           # English examples
+make all LANG=ja   # Japanese examples
+```
+
+For detailed example documentation, see [examples/README.md](examples/README.md).
 
 ## Related Projects
 

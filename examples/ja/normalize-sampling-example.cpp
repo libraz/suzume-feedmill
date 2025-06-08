@@ -52,8 +52,8 @@ int main(int argc, char* argv[]) {
                       << (ratio * 100.0) << "%" << std::flush;
         };
 
-        // 4番目のパラメータがサンプルサイズ
-        auto sampleResult = suzume::normalize(inputFile, sampleFile, sampleOpt, 1000);
+        // 注: サンプルサイズは API で内部的に処理されます
+        auto sampleResult = suzume::normalize(inputFile, sampleFile, sampleOpt);
 
         std::cout << "\nサンプリングが完了しました！" << std::endl;
         std::cout << sampleResult.rows << "行のサンプルを作成しました" << std::endl;

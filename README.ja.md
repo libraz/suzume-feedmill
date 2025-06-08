@@ -30,7 +30,7 @@
 
   - Linux（glibc/musl）、macOS（Intel/ARM）、Windows（x64）用のプリビルドバイナリ
   - スタンドアロン CLI として利用可能
-  - WebAssembly対応でブラウザやNode.js環境でも利用可能
+  - **試験的** WebAssembly対応でブラウザやNode.js環境でも利用可能
 
 - **文字レベル処理**
   - 明示的な単語境界のない言語（日本語、中国語など）向けに設計
@@ -51,7 +51,7 @@
 
 ```bash
 # リポジトリをクローン
-git clone https://github.com/yourusername/suzume-feedmill.git
+git clone https://github.com/libraz/suzume-feedmill.git
 cd suzume-feedmill
 
 # ビルドディレクトリを作成
@@ -69,7 +69,7 @@ sudo make install
 
 ### プリビルドバイナリの使用
 
-様々なプラットフォーム用のプリビルドバイナリは[リリースページ](https://github.com/yourusername/suzume-feedmill/releases)で入手できます。
+様々なプラットフォーム用のプリビルドバイナリは[リリースページ](https://github.com/libraz/suzume-feedmill/releases)で入手できます。
 
 ## クイックスタートガイド
 
@@ -365,9 +365,58 @@ make
 make test
 ```
 
-## WebAssembly対応
+## Docker
+
+suzume-feedmillは簡単なデプロイメントとクロスプラットフォーム使用のためのDockerサポートを提供しています。
+
+### 利用可能なDockerイメージ
+
+2つのDockerfileバリアントを提供しています：
+
+- **Dockerfile**（Alpine基盤）: サイズ最適化（~28MB）
+- **Dockerfile.ubuntu**（Ubuntu基盤）: 互換性最適化
+
+### Dockerイメージのビルド
+
+```bash
+# Alpine基盤イメージをビルド（最小サイズ）
+docker build -t suzume-feedmill:alpine .
+
+# Ubuntu基盤イメージをビルド（互換性重視）
+docker build -f Dockerfile.ubuntu -t suzume-feedmill:ubuntu .
+```
+
+### Dockerイメージの使用
+
+```bash
+# GitHub Container Registryから取得（利用可能時）
+docker pull ghcr.io/libraz/suzume-feedmill:latest        # Alpine版
+docker pull ghcr.io/libraz/suzume-feedmill:latest-ubuntu # Ubuntu版
+
+# ローカルファイルで実行
+docker run --rm -v $(pwd):/data ghcr.io/libraz/suzume-feedmill:latest \
+  normalize /data/input.tsv /data/output.tsv
+
+# インタラクティブシェル
+docker run --rm -it -v $(pwd):/data ghcr.io/libraz/suzume-feedmill:latest sh
+```
+
+### Dockerイメージバリアント
+
+| イメージ | ベース | サイズ | 用途 |
+|---------|--------|--------|------|
+| `suzume-feedmill:alpine` | Alpine Linux | ~28MB | 本番環境、最小フットプリント |
+| `suzume-feedmill:ubuntu` | Ubuntu 22.04 | ~100MB | 開発環境、互換性重視 |
+
+### CI/CD統合
+
+Dockerイメージはリリースタグ時にGitHub Container Registryに自動的にビルド・プッシュされます。手動ビルドやテストには、`workflow_dispatch`イベントと試験的WebAssemblyビルド用の`enable_wasm`オプションを使用してください。
+
+## WebAssembly対応（試験的実装）
 
 suzume-feedmillはWebAssembly（WASM）にコンパイルして、WebブラウザやNode.js環境で使用することができます。これにより、サーバーサイド処理なしでブラウザ上で直接ライブラリを実行できます。
+
+**注意: WebAssembly対応は現在試験的実装であり、全ての環境で完全に安定しているわけではありません。**
 
 ### WebAssembly向けのビルド
 
@@ -382,23 +431,36 @@ cd emsdk
 source ./emsdk_env.sh
 ```
 
-次に、WebAssemblyモジュールをビルドします：
+**方法1: ビルドスクリプトを使用（推奨）**
+
+```bash
+# 自動セットアップ用のビルドスクリプトを使用
+./scripts/build-wasm.sh
+```
+
+**方法2: 手動ビルド**
 
 ```bash
 # ビルドディレクトリを作成
 mkdir build-wasm && cd build-wasm
 
 # Emscriptenで設定
-emcmake cmake .. -DBUILD_WASM=ON
+emcmake cmake .. -DBUILD_WASM=ON -DCMAKE_BUILD_TYPE=Release
 
 # ビルド
-emmake make
+emmake make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 ```
 
 これにより、以下のファイルが生成されます：
 
-- `suzume-feedmill.js`: JavaScriptグルーコード
-- `suzume-feedmill.wasm`: WebAssemblyバイナリ
+- `suzume-feedmill.js`: WebAssemblyバイナリが埋め込まれたJavaScriptモジュール（`SINGLE_FILE=1`使用）
+
+**WebAssemblyモジュールのテスト:**
+
+```bash
+# ビルドしたモジュールをテスト
+node scripts/test-wasm.js
+```
 
 ### Webブラウザでの使用例
 

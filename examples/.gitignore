@@ -1,0 +1,14 @@
+# Example build outputs
+build/
+build-*/
+
+# Temporary test files
+test-*.txt
+test-*.tsv
+*test-output*
+*test-input*
+
+# Example output directories
+*_example_output/
+example_output/
+stats_example_output/

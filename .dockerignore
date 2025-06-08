@@ -1,0 +1,65 @@
+# Build artifacts
+build*/
+build-wasm/
+wasm/
+dist/
+lib/
+bin/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.node
+*.darts
+*.wasm
+*.js.mem
+*.js.symbols
+compile_commands.json
+
+# Documentation and examples
+docs/
+examples/
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env*
+
+# Logs and temporary files
+*.log
+logs/
+test-*.js
+test-*.txt
+*test-output*
+*test-input*
+
+# Coverage reports
+coverage/
+
+# Dependencies that should be fetched fresh
+emsdk/
+
+# Claude Code
+.claude/
+.roo/
+
+# Cache files
+.eslintcache

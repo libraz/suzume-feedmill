@@ -4,6 +4,7 @@
  */
 
 #include "options.h"
+#include "src/cli/version.h"
 #include <iostream>
 #include <chrono>
 #include <sstream>
@@ -452,7 +453,7 @@ bool OptionsParser::isPmiCommand() const {
 }
 
 std::string OptionsParser::getVersion() {
-    return "v0.1.0";
+    return suzume::cli::getVersion();
 }
 
 const suzume::WordExtractionOptions& OptionsParser::getWordExtractionOptions() const {
