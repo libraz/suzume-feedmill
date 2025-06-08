@@ -67,7 +67,9 @@ NormalizeResult normalizeWithProgress(
         // Report error progress if callback exists
         if (progressCallback) {
             // In exception handler, just report 100% directly
-            progressCallback(1.0); // Report 100% even on error to ensure callback is called
+            if (progressCallback) {
+                progressCallback(1.0);
+            } // Report 100% even on error to ensure callback is called
         }
 
         throw; // Re-throw the exception
@@ -77,7 +79,9 @@ NormalizeResult normalizeWithProgress(
         // Report error progress if callback exists
         if (progressCallback) {
             // In exception handler, just report 100% directly
-            progressCallback(1.0); // Report 100% even on error to ensure callback is called
+            if (progressCallback) {
+                progressCallback(1.0);
+            } // Report 100% even on error to ensure callback is called
         }
 
         throw; // Re-throw the exception
@@ -146,12 +150,26 @@ NormalizeResult normalizeWithStructuredProgress(
     const NormalizeOptions& options
 ) {
     try {
-        // Validate min/max length relationship
+        // Validate options
         if (options.minLength > 0 && options.maxLength > 0 && options.minLength > options.maxLength) {
             throw std::invalid_argument("Invalid length filters: min-length (" +
                                        std::to_string(options.minLength) +
                                        ") cannot be greater than max-length (" +
                                        std::to_string(options.maxLength) + ")");
+        }
+        
+        // Validate bloom filter false positive rate
+        if (options.bloomFalsePositiveRate <= 0.0 || options.bloomFalsePositiveRate >= 1.0) {
+            throw std::invalid_argument("Invalid bloomFalsePositiveRate: " +
+                                       std::to_string(options.bloomFalsePositiveRate) +
+                                       " (must be between 0.0 and 1.0)");
+        }
+        
+        // Validate progress step
+        if (options.progressStep <= 0.0 || options.progressStep > 1.0) {
+            throw std::invalid_argument("Invalid progressStep: " +
+                                       std::to_string(options.progressStep) +
+                                       " (must be between 0.0 and 1.0)");
         }
 
         // Track last reported progress to avoid excessive callbacks
@@ -163,7 +181,9 @@ NormalizeResult normalizeWithStructuredProgress(
         info.phase = ProgressInfo::Phase::Reading;
         info.phaseRatio = 0.0;
         info.overallRatio = 0.0;
-        progressCallback(info);
+        if (progressCallback) {
+            progressCallback(info);
+        }
 
         // Check if input is stdin or if file exists
         bool isStdin = (inputPath == "-");
@@ -205,7 +225,9 @@ NormalizeResult normalizeWithStructuredProgress(
                     info.processedBytes = bytesRead;
                     info.totalBytes = 0; // Unknown for stdin
 
-                    progressCallback(info);
+                    if (progressCallback) {
+            progressCallback(info);
+        }
                     lastReportedProgress.store(info.overallRatio);
                 }
             }
@@ -235,11 +257,15 @@ NormalizeResult normalizeWithStructuredProgress(
                 info.totalBytes = fileSize;
 
                 // Report at specific thresholds or if significant progress made
-                double currentProgress = lastReportedProgress.load();
-                if (info.overallRatio >= currentProgress + options.progressStep ||
-                    (progress >= 0.99 && currentProgress < 0.49)) {
-                    progressCallback(info);
-                    lastReportedProgress.store(info.overallRatio);
+                if (progressCallback) {
+                    double currentProgress = lastReportedProgress.load();
+                    if (info.overallRatio >= currentProgress + options.progressStep ||
+                        (progress >= 0.99 && currentProgress < 0.49)) {
+                        if (progressCallback) {
+            progressCallback(info);
+        }
+                        lastReportedProgress.store(info.overallRatio);
+                    }
                 }
             }
             }
@@ -249,7 +275,9 @@ NormalizeResult normalizeWithStructuredProgress(
         info.phase = ProgressInfo::Phase::Processing;
         info.phaseRatio = 0.0;
         info.overallRatio = 0.5; // Reading phase complete
-        progressCallback(info);
+        if (progressCallback) {
+            progressCallback(info);
+        }
         lastReportedProgress.store(info.overallRatio);
 
         // Process in parallel or single-threaded based on input size
@@ -296,12 +324,18 @@ NormalizeResult normalizeWithStructuredProgress(
                         threadInfo.processedBytes = bytesRead;
                         threadInfo.totalBytes = fileSize;
 
-                        // Report progress if significant
-                        double currentProgress = lastReportedProgress.load();
-                        if (threadInfo.overallRatio >= currentProgress + options.progressStep) {
-                            std::lock_guard<std::mutex> lock(progressMutex);
-                            progressCallback(threadInfo);
-                            lastReportedProgress.store(threadInfo.overallRatio);
+                        // Report progress if significant and callback exists
+                        if (progressCallback) {
+                            double currentProgress = lastReportedProgress.load();
+                            if (threadInfo.overallRatio >= currentProgress + options.progressStep) {
+                                std::lock_guard<std::mutex> lock(progressMutex);
+                                // Re-check after acquiring lock to ensure monotonic progress
+                                double lockedProgress = lastReportedProgress.load();
+                                if (threadInfo.overallRatio > lockedProgress) {
+                                    progressCallback(threadInfo);
+                                    lastReportedProgress.store(threadInfo.overallRatio);
+                                }
+                            }
                         }
                     }
                 });
@@ -330,7 +364,9 @@ NormalizeResult normalizeWithStructuredProgress(
             info.phase = ProgressInfo::Phase::Processing;
             info.phaseRatio = 1.0;
             info.overallRatio = 0.9; // Processing complete
+            if (progressCallback) {
             progressCallback(info);
+        }
             lastReportedProgress.store(info.overallRatio);
         }
 
@@ -338,7 +374,9 @@ NormalizeResult normalizeWithStructuredProgress(
         info.phase = ProgressInfo::Phase::Writing;
         info.phaseRatio = 0.0;
         info.overallRatio = 0.9;
-        progressCallback(info);
+        if (progressCallback) {
+            progressCallback(info);
+        }
         lastReportedProgress.store(info.overallRatio);
 
         // Check if output is null (special case for no output) or stdout
@@ -399,7 +437,9 @@ NormalizeResult normalizeWithStructuredProgress(
         info.phase = ProgressInfo::Phase::Complete;
         info.phaseRatio = 1.0;
         info.overallRatio = 1.0;
-        progressCallback(info);
+        if (progressCallback) {
+            progressCallback(info);
+        }
 
         // Return results
         NormalizeResult result;
@@ -414,7 +454,9 @@ NormalizeResult normalizeWithStructuredProgress(
         errorInfo.phase = ProgressInfo::Phase::Complete;
         errorInfo.phaseRatio = 1.0;
         errorInfo.overallRatio = 1.0;
-        progressCallback(errorInfo);
+        if (progressCallback) {
+            progressCallback(errorInfo);
+        }
 
         throw; // Re-throw the exception
     } catch (...) {
@@ -425,7 +467,9 @@ NormalizeResult normalizeWithStructuredProgress(
         errorInfo.phase = ProgressInfo::Phase::Complete;
         errorInfo.phaseRatio = 1.0;
         errorInfo.overallRatio = 1.0;
-        progressCallback(errorInfo);
+        if (progressCallback) {
+            progressCallback(errorInfo);
+        }
 
         throw; // Re-throw the exception
     }

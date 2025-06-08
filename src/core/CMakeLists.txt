@@ -5,6 +5,8 @@ add_library(suzume_core_lib
   text_utils.cpp
   buffer_api.cpp
   word_extraction.cpp
+  ngram_cache.cpp
+  streaming_processor.cpp
 )
 
 # Add word_extraction subdirectory

@@ -223,6 +223,122 @@ TEST_F(CandidateVerifierTest, StatisticalValidationDisabled) {
     }
 }
 
+// Test statistical validation scores
+TEST_F(CandidateVerifierTest, StatisticalValidationScores) {
+    // Create candidates with different frequency patterns
+    std::vector<WordCandidate> testCandidates;
+
+    // High frequency candidate (should get high score)
+    WordCandidate highFreq;
+    highFreq.text = "機械学習";
+    highFreq.frequency = 15;
+    highFreq.score = 5.0;
+    testCandidates.push_back(highFreq);
+
+    // Low frequency candidate (should get low score)
+    WordCandidate lowFreq;
+    lowFreq.text = "知能";
+    lowFreq.frequency = 3;
+    lowFreq.score = 3.0;
+    testCandidates.push_back(lowFreq);
+
+    // Medium frequency candidate
+    WordCandidate medFreq;
+    medFreq.text = "自然";
+    medFreq.frequency = 8;
+    medFreq.score = 4.0;
+    testCandidates.push_back(medFreq);
+
+    // Verify candidates
+    auto verifiedCandidates = verifier->verifyCandidates(testCandidates, originalTextPath_);
+
+    // Find candidates by text to check their statistical scores
+    double highFreqScore = -1.0, lowFreqScore = -1.0, medFreqScore = -1.0;
+    for (const auto& candidate : verifiedCandidates) {
+        if (candidate.text == "機械学習") {
+            highFreqScore = candidate.statisticalScore;
+        } else if (candidate.text == "知能") {
+            lowFreqScore = candidate.statisticalScore;
+        } else if (candidate.text == "自然") {
+            medFreqScore = candidate.statisticalScore;
+        }
+    }
+
+    // Statistical scores should correlate with frequency but also consider text length and distribution
+    EXPECT_GT(highFreqScore, lowFreqScore) << "High frequency candidate should have higher statistical score";
+    EXPECT_GT(medFreqScore, lowFreqScore) << "Medium frequency candidate should have higher statistical score than low frequency";
+    
+    // All scores should be between 0 and 1
+    EXPECT_GE(highFreqScore, 0.0);
+    EXPECT_LE(highFreqScore, 1.0);
+    EXPECT_GE(lowFreqScore, 0.0);
+    EXPECT_LE(lowFreqScore, 1.0);
+    EXPECT_GE(medFreqScore, 0.0);
+    EXPECT_LE(medFreqScore, 1.0);
+}
+
+// Test statistical validation considers text length
+TEST_F(CandidateVerifierTest, StatisticalValidationConsidersLength) {
+    std::vector<WordCandidate> testCandidates;
+
+    // Same frequency but different lengths - longer should get higher score
+    WordCandidate shortWord;
+    shortWord.text = "学習";  // 2 characters
+    shortWord.frequency = 8;
+    shortWord.score = 4.0;
+    testCandidates.push_back(shortWord);
+
+    WordCandidate longWord;
+    longWord.text = "機械学習";  // 4 characters
+    longWord.frequency = 8;
+    longWord.score = 4.0;
+    testCandidates.push_back(longWord);
+
+    auto verifiedCandidates = verifier->verifyCandidates(testCandidates, originalTextPath_);
+
+    double shortScore = -1.0, longScore = -1.0;
+    for (const auto& candidate : verifiedCandidates) {
+        if (candidate.text == "学習") {
+            shortScore = candidate.statisticalScore;
+        } else if (candidate.text == "機械学習") {
+            longScore = candidate.statisticalScore;
+        }
+    }
+
+    // Longer words with same frequency should get higher scores (more informative)
+    EXPECT_GT(longScore, shortScore) << "Longer words should get higher statistical scores when frequency is equal";
+}
+
+// Test statistical validation edge cases
+TEST_F(CandidateVerifierTest, StatisticalValidationEdgeCases) {
+    std::vector<WordCandidate> testCandidates;
+
+    // Zero frequency candidate
+    WordCandidate zeroFreq;
+    zeroFreq.text = "ゼロ頻度";
+    zeroFreq.frequency = 0;
+    zeroFreq.score = 1.0;
+    testCandidates.push_back(zeroFreq);
+
+    // Very high frequency candidate  
+    WordCandidate veryHighFreq;
+    veryHighFreq.text = "超高頻度";
+    veryHighFreq.frequency = 1000;
+    veryHighFreq.score = 5.0;
+    testCandidates.push_back(veryHighFreq);
+
+    auto verifiedCandidates = verifier->verifyCandidates(testCandidates, originalTextPath_);
+
+    for (const auto& candidate : verifiedCandidates) {
+        if (candidate.text == "ゼロ頻度") {
+            EXPECT_EQ(candidate.statisticalScore, 0.0) << "Zero frequency should result in zero statistical score";
+        } else if (candidate.text == "超高頻度") {
+            EXPECT_LE(candidate.statisticalScore, 1.0) << "Statistical score should be capped at 1.0";
+            EXPECT_GT(candidate.statisticalScore, 0.8) << "Very high frequency should result in high statistical score";
+        }
+    }
+}
+
 // Test with progress callback
 TEST_F(CandidateVerifierTest, ProgressCallback) {
     // Progress tracking

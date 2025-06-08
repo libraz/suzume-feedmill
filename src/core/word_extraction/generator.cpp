@@ -189,6 +189,9 @@ std::vector<WordCandidate> CandidateGenerator::generateCandidatesSequential(
     const std::vector<std::tuple<std::string, double, uint32_t>>& ngrams
 ) {
     std::vector<WordCandidate> candidates;
+    
+    // Pre-allocate vector for better performance
+    candidates.reserve(std::min(ngrams.size(), static_cast<size_t>(options_.maxCandidates)));
 
     // Simple implementation for now - just convert n-grams to candidates
     // This will be expanded with more sophisticated candidate generation logic
@@ -200,17 +203,19 @@ std::vector<WordCandidate> CandidateGenerator::generateCandidatesSequential(
             candidate.frequency = freq;
             candidate.verified = false;
 
-            candidates.push_back(candidate);
+            candidates.emplace_back(std::move(candidate)); // Use emplace_back for efficiency
         }
     }
 
     // Limit number of candidates if needed
     if (candidates.size() > options_.maxCandidates) {
-        // Sort by score
-        std::sort(candidates.begin(), candidates.end(),
-            [](const WordCandidate& a, const WordCandidate& b) {
-                return a.score > b.score;
-            });
+        // Use partial_sort for better performance when we only need top K elements
+        std::partial_sort(candidates.begin(), 
+                         candidates.begin() + options_.maxCandidates,
+                         candidates.end(),
+                         [](const WordCandidate& a, const WordCandidate& b) {
+                             return a.score > b.score;
+                         });
 
         // Keep only top candidates
         candidates.resize(options_.maxCandidates);

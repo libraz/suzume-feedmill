@@ -33,8 +33,7 @@ namespace suzume {
 namespace core {
 
 namespace {
-    std::mutex g_mutex;
-    bool g_initialized = false;
+    std::once_flag g_init_flag;
 
     // Code point range for emoji detection
     struct CodePointRange {
@@ -71,20 +70,14 @@ namespace {
 
     // Initialization function
     void ensureInitialized() {
-        std::lock_guard<std::mutex> lock(g_mutex);
-
-        if (g_initialized) {
-            return;
-        }
-
-        // Initialize ICU if needed
-        UErrorCode status = U_ZERO_ERROR;
-        u_init(&status);
-        if (U_FAILURE(status)) {
-            std::cerr << "Failed to initialize ICU: " << u_errorName(status) << std::endl;
-        }
-
-        g_initialized = true;
+        std::call_once(g_init_flag, []() {
+            // Initialize ICU if needed
+            UErrorCode status = U_ZERO_ERROR;
+            u_init(&status);
+            if (U_FAILURE(status)) {
+                throw std::runtime_error("Failed to initialize ICU: " + std::string(u_errorName(status)));
+            }
+        });
     }
 
     // Check if a code point is within the specified ranges
@@ -428,9 +421,16 @@ std::string normalizeLine(const std::string& line, suzume::NormalizationForm for
         }
 
         return normalizedLine;
+    } catch (const std::bad_alloc&) {
+        // Memory allocation failed - re-throw critical errors
+        throw;
     } catch (const std::exception& e) {
+        // Log other exceptions before returning empty string
+        std::cerr << "Warning: Exception in normalizeLine: " << e.what() << std::endl;
         return "";
     } catch (...) {
+        // Log unknown exceptions
+        std::cerr << "Warning: Unknown exception in normalizeLine" << std::endl;
         return "";
     }
 }

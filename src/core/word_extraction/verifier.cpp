@@ -195,11 +195,60 @@ std::pair<std::string, double> CandidateVerifier::analyzeContext(
 
 double CandidateVerifier::validateStatistically(
     const WordCandidate& candidate,
-    const TextIndex& /* textIndex */  // 未使用パラメータを明示
+    const TextIndex& textIndex
 ) {
-    // Placeholder implementation - will be expanded in future
-    // Simple score based on frequency
-    return std::min(1.0, candidate.frequency / 10.0);
+    // Zero frequency gets zero score
+    if (candidate.frequency == 0) {
+        return 0.0;
+    }
+
+    // Base score from frequency (normalized)
+    double frequencyScore = std::min(1.0, candidate.frequency / 20.0);
+    
+    // Length bonus: longer words are generally more informative
+    // Bonus scales with character count (UTF-8 aware)
+    size_t charCount = 0;
+    const char* ptr = candidate.text.c_str();
+    const char* end = ptr + candidate.text.length();
+    
+    // Count UTF-8 characters properly
+    while (ptr < end) {
+        unsigned char c = *ptr;
+        if (c < 0x80) {
+            // ASCII character
+            ptr++;
+        } else if ((c & 0xE0) == 0xC0) {
+            // 2-byte UTF-8 character
+            ptr += 2;
+        } else if ((c & 0xF0) == 0xE0) {
+            // 3-byte UTF-8 character (common for Japanese)
+            ptr += 3;
+        } else if ((c & 0xF8) == 0xF0) {
+            // 4-byte UTF-8 character
+            ptr += 4;
+        } else {
+            // Invalid UTF-8, skip
+            ptr++;
+        }
+        charCount++;
+    }
+    
+    // Length bonus: diminishing returns after 4 characters
+    double lengthBonus = 1.0 + std::min(0.3, (charCount - 1) * 0.1);
+    
+    // Apply length bonus to frequency score
+    double statisticalScore = frequencyScore * lengthBonus;
+    
+    // Consider context diversity if available
+    auto positions = textIndex.findAll(candidate.text);
+    if (positions.size() > 1) {
+        // Multiple occurrences in different contexts boost the score
+        double contextDiversityBonus = 1.0 + std::min(0.2, (positions.size() - 1) * 0.05);
+        statisticalScore *= contextDiversityBonus;
+    }
+    
+    // Cap at 1.0
+    return std::min(1.0, statisticalScore);
 }
 
 bool CandidateVerifier::lookupInDictionary(const WordCandidate& candidate) {

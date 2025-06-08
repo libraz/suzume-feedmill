@@ -7,6 +7,8 @@
 #include "normalize.h"
 #include "pmi.h"
 #include "text_utils.h"
+#include "progress_buffer.h"
+#include "managed_buffer.h"
 #include <vector>
 #include <string>
 #include <sstream>
@@ -49,8 +51,13 @@ void linesToBuffer(const std::vector<std::string>& lines, uint8_t** outputData, 
         totalSize += line.size() + 1; // +1 for newline
     }
 
-    // Allocate memory
-    *outputData = new uint8_t[totalSize];
+    // Use RAII for safe memory management
+    ManagedBuffer buffer(totalSize);
+    if (!buffer.valid()) {
+        throw std::bad_alloc();
+    }
+    
+    *outputData = buffer.release(); // Transfer ownership to caller
     *outputLength = totalSize;
 
     // Copy data
@@ -67,26 +74,10 @@ void updateProgress(uint32_t* progressBuffer, uint32_t phase, uint32_t current, 
         return;
     }
 
-    // Update phase
-    std::atomic_store_explicit(
-        reinterpret_cast<std::atomic<uint32_t>*>(&progressBuffer[0]),
-        phase,
-        std::memory_order_release
-    );
-
-    // Update current progress
-    std::atomic_store_explicit(
-        reinterpret_cast<std::atomic<uint32_t>*>(&progressBuffer[1]),
-        current,
-        std::memory_order_release
-    );
-
-    // Update total
-    std::atomic_store_explicit(
-        reinterpret_cast<std::atomic<uint32_t>*>(&progressBuffer[2]),
-        total,
-        std::memory_order_release
-    );
+    // Create thread-safe progress buffer and copy values
+    ProgressBuffer safeBuffer;
+    safeBuffer.updateProgress(phase, current, total);
+    safeBuffer.copyToLegacyBuffer(progressBuffer);
 }
 
 NormalizeResult normalizeBuffer(
@@ -229,11 +220,17 @@ PmiResult calculatePmiFromBuffer(
         ss << item.ngram << "\t" << item.score << "\t" << item.frequency << "\n";
     }
 
-    // Convert to buffer
+    // Convert to buffer using RAII
     std::string output = ss.str();
     *outputLength = output.size();
-    *outputData = new uint8_t[*outputLength];
-    std::memcpy(*outputData, output.c_str(), *outputLength);
+    
+    ManagedBuffer buffer(*outputLength);
+    if (!buffer.valid()) {
+        throw std::bad_alloc();
+    }
+    
+    std::memcpy(buffer.get(), output.c_str(), *outputLength);
+    *outputData = buffer.release(); // Transfer ownership to caller
 
     // Update result statistics
     result.grams = ngramCounts.size();

@@ -72,6 +72,41 @@ private:
         const std::vector<VerifiedCandidate>& candidates
     );
 
+    /**
+     * @brief Check if two candidate texts are overlapping
+     *
+     * @param text1 First candidate text
+     * @param text2 Second candidate text
+     * @return bool True if texts overlap (substring or exact match)
+     */
+    bool isOverlapping(const std::string& text1, const std::string& text2);
+
+    /**
+     * @brief Check if text is a likely valid word candidate for discovery
+     *
+     * @param text Text to validate
+     * @return bool True if text could be a valid word (permissive for new word discovery)
+     */
+    bool isLikelyValidWordCandidate(const std::string& text);
+
+    /**
+     * @brief Check if text is a common Japanese particle or expression
+     *
+     * @param text Text to check
+     * @return bool True if text is a common particle/expression to filter out
+     */
+    bool isCommonParticleOrExpression(const std::string& text);
+
+    /**
+     * @brief Check if text is likely a functional word using heuristics
+     *
+     * @param text Text to check
+     * @param hiraganaCount Number of hiragana characters
+     * @param totalChars Total character count
+     * @return bool True if text is likely a functional word to filter out
+     */
+    bool isLikelyFunctionalWord(const std::string& text, int hiraganaCount, int totalChars);
+
     WordExtractionOptions options_;
 };
 

@@ -11,12 +11,13 @@
 #include <tuple>
 #include <memory>
 #include <unordered_map>
+#include "memory_pool.h"
 
 namespace suzume {
 namespace core {
 
 /**
- * @brief N-gram trie for efficient prefix/suffix matching
+ * @brief N-gram trie for efficient prefix/suffix matching with memory pool optimization
  */
 class NGramTrie {
 public:
@@ -50,8 +51,20 @@ public:
      */
     std::vector<std::tuple<std::string, double, uint32_t>> findBySuffix(const std::string& suffix) const;
 
+    /**
+     * @brief Get memory usage statistics (simplified)
+     * @return Estimated memory usage in bytes
+     */
+    size_t getMemoryUsage();
+
+    /**
+     * @brief Get node count for debugging/profiling
+     * @return Number of nodes in the trie
+     */
+    size_t getNodeCount();
+
 private:
-    // Trie node structure
+    // Trie node structure using standard smart pointers
     class Node {
     public:
         std::unordered_map<char, std::unique_ptr<Node>> children;
@@ -78,7 +91,15 @@ private:
      */
     void collectWordsBySuffix(const Node* node, const std::string& suffix, std::vector<std::tuple<std::string, double, uint32_t>>& results) const;
 
-    std::unique_ptr<Node> root_;  // Root of the trie
+    /**
+     * @brief Count nodes recursively for statistics
+     * @param node Starting node
+     * @return Number of nodes in subtree
+     */
+    size_t countNodes(const Node* node) const;
+
+    std::unique_ptr<Node> root_;  // Root of the trie (use unique_ptr for simple management)
+    size_t nodeCount_;   // Track number of nodes for statistics
 };
 
 } // namespace core

@@ -8,7 +8,7 @@
 namespace suzume {
 namespace core {
 
-NGramTrie::NGramTrie() : root_(std::make_unique<Node>()) {}
+NGramTrie::NGramTrie() : root_(std::make_unique<Node>()), nodeCount_(1) {}
 
 void NGramTrie::add(
     const std::string& ngram,
@@ -21,6 +21,7 @@ void NGramTrie::add(
     for (char c : ngram) {
         if (!current->children[c]) {
             current->children[c] = std::make_unique<Node>();
+            nodeCount_++;
         }
         current = current->children[c].get();
     }
@@ -100,6 +101,25 @@ void NGramTrie::collectWordsBySuffix(
     for (const auto& [_, child] : node->children) {
         collectWordsBySuffix(child.get(), suffix, results);
     }
+}
+
+size_t NGramTrie::getMemoryUsage() {
+    // Estimate memory usage based on node count
+    return nodeCount_ * (sizeof(Node) + 32); // Rough estimate including overhead
+}
+
+size_t NGramTrie::getNodeCount() {
+    return nodeCount_;
+}
+
+size_t NGramTrie::countNodes(const Node* node) const {
+    if (!node) return 0;
+    
+    size_t count = 1; // Count this node
+    for (const auto& [_, child] : node->children) {
+        count += countNodes(child.get());
+    }
+    return count;
 }
 
 } // namespace core

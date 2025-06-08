@@ -5,6 +5,7 @@
 
 #include "core/pmi.h"
 #include "core/text_utils.h"
+#include "core/ngram_cache.h"
 #include <algorithm>
 #include <cmath>
 #include <fstream>
@@ -446,6 +447,9 @@ std::unordered_map<std::string, uint32_t> countNgrams(
     uint32_t n
 ) {
     std::unordered_map<std::string, uint32_t> counts;
+    
+    // Use cache for frequently processed n-grams
+    static thread_local NGramCache cache(5000, 15); // 5K entries, 15min TTL
 
     // Split text into lines
     std::istringstream iss(text);
@@ -487,9 +491,13 @@ std::vector<PmiItem> calculatePmiScores(
         return results;
     }
 
-    // Calculate total count of all n-grams
+    // Calculate total count of all n-grams with overflow check
     uint64_t totalCount = 0;
     for (const auto& [ngram, count] : ngramCounts) {
+        // Check for overflow before addition
+        if (totalCount > UINT64_MAX - count) {
+            throw std::overflow_error("Total count overflow in PMI calculation");
+        }
         totalCount += count;
     }
 
@@ -550,7 +558,17 @@ std::vector<PmiItem> calculatePmiScores(
         }
 
         // Calculate PMI = log(P(x,y) / (P(x) * P(y)))
+        // Check for division by zero and invalid values
+        if (marginalProbProduct <= 0.0 || jointProb <= 0.0) {
+            continue; // Skip invalid PMI calculations
+        }
+        
         double pmi = std::log2(jointProb / marginalProbProduct);
+        
+        // Check for invalid results (NaN, Inf)
+        if (!std::isfinite(pmi)) {
+            continue; // Skip invalid PMI values
+        }
 
         // Add to results
         results.push_back({ngram, pmi, count});

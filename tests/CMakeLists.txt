@@ -31,6 +31,13 @@ if(GTEST_FOUND)
     core/word_extraction_verifier_test.cpp
     core/word_extraction_filter_test.cpp
     core/word_extraction_ranker_test.cpp
+    core/memory_safety_test.cpp
+    core/concurrency_safety_test.cpp
+    core/performance_issues_test.cpp
+    core/resource_leak_test.cpp
+    core/edge_case_test.cpp
+    core/memory_pool_test.cpp
+    core/ngram_optimization_test.cpp
 
     # IO layer tests
     io/file_io_test.cpp
@@ -121,6 +128,13 @@ else()
     core/word_extraction_verifier_test.cpp
     core/word_extraction_filter_test.cpp
     core/word_extraction_ranker_test.cpp
+    core/memory_safety_test.cpp
+    core/concurrency_safety_test.cpp
+    core/performance_issues_test.cpp
+    core/resource_leak_test.cpp
+    core/edge_case_test.cpp
+    core/memory_pool_test.cpp
+    core/ngram_optimization_test.cpp
 
     # IO layer tests
     io/file_io_test.cpp

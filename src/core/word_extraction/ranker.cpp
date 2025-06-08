@@ -37,7 +37,7 @@ std::vector<RankedCandidate> CandidateRanker::rankCandidates(
         rankedCandidate.frequency = candidate.frequency;
         rankedCandidate.context = candidate.context;
 
-        rankedCandidates.push_back(rankedCandidate);
+        rankedCandidates.emplace_back(std::move(rankedCandidate));
 
         // Report progress
         processed++;
@@ -46,8 +46,8 @@ std::vector<RankedCandidate> CandidateRanker::rankCandidates(
         }
     }
 
-    // Sort by score (descending)
-    std::sort(rankedCandidates.begin(), rankedCandidates.end(),
+    // Sort by score (descending) - use stable_sort for consistent ordering
+    std::stable_sort(rankedCandidates.begin(), rankedCandidates.end(),
         [](const RankedCandidate& a, const RankedCandidate& b) {
             return a.score > b.score;
         });

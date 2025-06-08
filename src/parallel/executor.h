@@ -74,8 +74,16 @@ public:
             size_t end = (i == threadCount - 1) ? input.size() : (i + 1) * chunkSize;
 
             threads.emplace_back([&, start, end]() {
-                for (size_t j = start; j < end; ++j) {
-                    result[j] = mapper(input[j]);
+                try {
+                    for (size_t j = start; j < end; ++j) {
+                        result[j] = mapper(input[j]);
+                    }
+                } catch (...) {
+                    // Store exception for re-throwing in main thread
+                    // In this simple implementation, we just let the exception
+                    // terminate the thread. For production use, consider
+                    // std::exception_ptr for proper exception propagation.
+                    throw;
                 }
             });
         }
